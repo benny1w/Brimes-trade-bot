@@ -1,0 +1,11 @@
+{
+  "name": "family-trade-bot",
+  "version": "1.0.0",
+  "description": "Telegram bot with a button-driven step flow and an admin page to edit it",
+  "main": "server.js",
+  "scripts": {
+    "start": "node --env-file=.env server.js"
+  },
+  "engines": { "node": ">=20.6" },
+  "license": "MIT"
+}
