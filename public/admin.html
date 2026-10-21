@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bot Admin</title>
+<style>
+  :root { --bg:#0f1720; --card:#17212c; --line:#26343f; --text:#e8eef3; --muted:#8fa1b0; --accent:#2f9bff; --danger:#ff5d5d; --ok:#34c77b; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.4 system-ui,sans-serif; }
+  header { position:sticky; top:0; z-index:5; background:var(--bg); border-bottom:1px solid var(--line); padding:12px 16px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  header h1 { font-size:17px; margin:0; flex:1; }
+  .muted { color:var(--muted); font-size:13px; }
+  main { max-width:760px; margin:0 auto; padding:16px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px; margin-bottom:14px; }
+  .card.start { border-color:var(--accent); }
+  .row { display:flex; gap:8px; align-items:center; margin-bottom:8px; }
+  label { display:block; font-size:12px; color:var(--muted); margin:10px 0 4px; }
+  input, textarea, select { width:100%; background:#0f1720; color:var(--text); border:1px solid var(--line); border-radius:8px; padding:9px; font:inherit; }
+  textarea { min-height:110px; resize:vertical; }
+  button { background:var(--card); color:var(--text); border:1px solid var(--line); border-radius:8px; padding:8px 12px; font:inherit; cursor:pointer; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; }
+  button.danger { color:var(--danger); }
+  .stepid { font-weight:700; font-size:16px; }
+  .badge { font-size:11px; background:var(--accent); color:#fff; border-radius:20px; padding:2px 8px; margin-left:6px; }
+  .btn-row { display:grid; grid-template-columns: 1.2fr 0.8fr 1.2fr auto; gap:6px; margin-bottom:6px; }
+  .btn-row input, .btn-row select { padding:7px; }
+  #toast { position:fixed; bottom:16px; left:50%; transform:translateX(-50%); padding:10px 16px; border-radius:8px; background:var(--ok); color:#06210f; font-weight:600; display:none; max-width:90%; }
+  #toast.err { background:var(--danger); color:#fff; }
+  .hint { font-size:12px; color:var(--muted); margin-top:4px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🤖 Bot Admin <span class="muted" id="stats"></span></h1>
+  <button id="addStep">+ New step</button>
+  <button class="primary" id="save">Save changes</button>
+</header>
+<main>
+  <p class="muted">Every step is one message the bot sends. Buttons either go to another step or open a link. Changes go live as soon as you save, no restart needed.</p>
+  <div id="steps"></div>
+</main>
+<div id="toast"></div>
+
+<script>
+let data = { start: '', steps: {} };
+const $ = (s) => document.querySelector(s);
+
+function toast(msg, isErr) {
+  const t = $('#toast');
+  t.textContent = msg;
+  t.className = isErr ? 'err' : '';
+  t.style.display = 'block';
+  clearTimeout(toast.timer);
+  toast.timer = setTimeout(() => (t.style.display = 'none'), isErr ? 5000 : 2200);
+}
+
+async function load() {
+  data = await (await fetch('/api/steps')).json();
+  const s = await (await fetch('/api/stats')).json();
+  $('#stats').textContent = `· ${s.users} user${s.users === 1 ? '' : 's'} have used the bot`;
+  render();
+}
+
+function stepOptions(selected) {
+  const items = Object.entries(data.steps)
+    .map(([id, s]) => {
+      const preview = s.text.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim().slice(0, 28);
+      return `<option value="${id}" ${id === selected ? 'selected' : ''}>${esc(id)} — ${esc(preview)}</option>`;
+    })
+    .join('');
+  return items + '<option value="__new__">➕ Create new step...</option>';
+}
+
+function esc(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function render() {
+  const wrap = $('#steps');
+  wrap.innerHTML = '';
+  Object.entries(data.steps).forEach(([id, step]) => {
+    const card = document.createElement('div');
+    card.className = 'card' + (id === data.start ? ' start' : '');
+    const btns = (step.buttons || [])
+      .map((b, i) => {
+        const isLink = !!b.url;
+        return `<div class="btn-row">
+          <input data-f="label" data-i="${i}" placeholder="Button text" value="${esc(b.label)}">
+          <select data-f="kind" data-i="${i}">
+            <option value="goto" ${!isLink ? 'selected' : ''}>Go to step</option>
+            <option value="url" ${isLink ? 'selected' : ''}>Open link</option>
+          </select>
+          ${isLink
+            ? `<input data-f="url" data-i="${i}" placeholder="https://..." value="${esc(b.url)}">`
+            : `<select data-f="goto" data-i="${i}">${stepOptions(b.goto)}</select>`}
+          <button class="danger" data-act="delbtn" data-i="${i}">✕</button>
+        </div>`;
+      })
+      .join('');
+    card.innerHTML = `
+      <div class="row">
+        <div class="stepid" style="flex:1">${esc(id)}${id === data.start ? '<span class="badge">START</span>' : ''}</div>
+        ${id !== data.start ? '<button data-act="setstart">Make start</button>' : ''}
+        ${Object.keys(data.steps).length > 1 ? '<button class="danger" data-act="delstep">Delete</button>' : ''}
+      </div>
+      <label>Message text</label>
+      <textarea data-f="text">${esc(step.text)}</textarea>
+      <div class="hint">Use {name} for the person's first name. Bold: &lt;b&gt;text&lt;/b&gt; · Italic: &lt;i&gt;text&lt;/i&gt;</div>
+      <label>Image link (optional, sent before the message)</label>
+      <input data-f="image" placeholder="https://..." value="${esc(step.image || '')}">
+      <label>Buttons</label>
+      ${btns}
+      <button data-act="addbtn">+ Add button</button>`;
+    card.dataset.id = id;
+    wrap.appendChild(card);
+  });
+}
+
+$('#steps').addEventListener('input', (e) => {
+  const card = e.target.closest('.card');
+  if (!card) return;
+  const step = data.steps[card.dataset.id];
+  const f = e.target.dataset.f;
+  const i = e.target.dataset.i;
+  if (f === 'text' || f === 'image') step[f] = e.target.value;
+  else if (i !== undefined) {
+    const b = step.buttons[i];
+    if (f === 'label') b.label = e.target.value;
+    if (f === 'url') b.url = e.target.value;
+    if (f === 'goto' && e.target.value !== '__new__') b.goto = e.target.value;
+  }
+});
+
+$('#steps').addEventListener('change', (e) => {
+  const card = e.target.closest('.card');
+  if (card && e.target.dataset.f === 'goto' && e.target.value === '__new__') {
+    const b = data.steps[card.dataset.id].buttons[e.target.dataset.i];
+    const raw = prompt('ID for the new step (lowercase letters, numbers, - or _). Example: buy_btc');
+    const id = raw ? raw.trim().toLowerCase() : '';
+    if (!id) return render();
+    if (!/^[a-z0-9_-]{1,40}$/.test(id)) { toast('Use only lowercase letters, numbers, - and _.', true); return render(); }
+    if (data.steps[id]) { toast('That ID already exists.', true); return render(); }
+    data.steps[id] = { text: 'New message', image: '', buttons: [{ label: '🏠 Main menu', goto: data.start }] };
+    b.goto = id;
+    render();
+    toast(`Step "${id}" created and linked. Scroll down to write its message.`);
+    return;
+  }
+  if (!card || e.target.dataset.f !== 'kind') return;
+  const b = data.steps[card.dataset.id].buttons[e.target.dataset.i];
+  if (e.target.value === 'url') { delete b.goto; b.url = 'https://'; }
+  else { delete b.url; b.goto = Object.keys(data.steps)[0]; }
+  render();
+});
+
+$('#steps').addEventListener('click', (e) => {
+  const act = e.target.dataset.act;
+  if (!act) return;
+  const card = e.target.closest('.card');
+  const id = card.dataset.id;
+  const step = data.steps[id];
+  if (act === 'addbtn') {
+    step.buttons = step.buttons || [];
+    step.buttons.push({ label: 'New button', goto: data.start });
+  } else if (act === 'delbtn') {
+    step.buttons.splice(+e.target.dataset.i, 1);
+  } else if (act === 'setstart') {
+    data.start = id;
+  } else if (act === 'delstep') {
+    const pointing = [];
+    Object.entries(data.steps).forEach(([k, s]) => {
+      if (k !== id) (s.buttons || []).forEach((b) => { if (b.goto === id) pointing.push(`"${b.label}" in ${k}`); });
+    });
+    let msg = `Delete step "${id}"?`;
+    if (pointing.length) msg += `\n\nThese buttons point to it and will be removed too:\n- ` + pointing.join('\n- ');
+    if (id === data.start) msg += `\n\nThis is the START step, so another step will become the start. You can change it with "Make start".`;
+    if (!confirm(msg)) return;
+    delete data.steps[id];
+    Object.values(data.steps).forEach((s) => { s.buttons = (s.buttons || []).filter((b) => b.goto !== id); });
+    if (id === data.start) data.start = Object.keys(data.steps)[0];
+    toast('Deleted. Tap "Save changes" to make it live.');
+  }
+  render();
+});
+
+$('#addStep').addEventListener('click', () => {
+  const raw = prompt('Step ID (lowercase letters, numbers, - or _). Example: buy_btc');
+  if (!raw) return;
+  const id = raw.trim().toLowerCase();
+  if (!/^[a-z0-9_-]{1,40}$/.test(id)) return toast('Use only lowercase letters, numbers, - and _.', true);
+  if (data.steps[id]) return toast('That ID already exists.', true);
+  data.steps[id] = { text: 'New message', image: '', buttons: [{ label: '🏠 Main menu', goto: data.start }] };
+  render();
+  document.querySelector(`[data-id="${id}"]`).scrollIntoView({ behavior: 'smooth' });
+});
+
+$('#save').addEventListener('click', async () => {
+  const res = await fetch('/api/steps', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+  const out = await res.json();
+  if (res.ok) toast('Saved. Live now ✓');
+  else toast(out.error || 'Save failed', true);
+});
+
+load();
+</script>
+</body>
+</html>
