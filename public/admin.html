@@ -33,6 +33,11 @@
   .fu-top .num { width:72px; padding:7px; }
   .fu-top .unit { width:104px; padding:7px; }
   .fu textarea { min-height:80px; }
+  .fu .var { display:flex; gap:6px; align-items:flex-start; margin:6px 0; }
+  .fu .var textarea { min-height:64px; }
+  .fu label.chk { display:flex; align-items:center; gap:6px; margin:0; color:var(--text); font-size:13px; }
+  .fu label.chk input { width:auto; }
+  .fu button[data-act="addvar"] { margin-top:6px; }
   .hint { font-size:12px; color:var(--muted); margin-top:4px; }
 </style>
 </head>
@@ -90,20 +95,37 @@ function followupsHtml(step) {
       <div class="fu-top">
         <span class="muted">Send after</span>
         <input class="num" type="number" min="0" step="any" data-f="fu-after" data-j="${j}" value="${esc(f.after)}">
+        <span class="muted">to</span>
+        <input class="num" type="number" min="0" step="any" data-f="fu-afterMax" data-j="${j}" placeholder="same" value="${esc(f.afterMax || '')}">
         <select class="unit" data-f="fu-unit" data-j="${j}">
           ${['minutes', 'hours', 'days'].map((u) => `<option value="${u}" ${f.unit === u ? 'selected' : ''}>${u}</option>`).join('')}
         </select>
-        <span class="muted">· repeat</span>
-        <input class="num" type="number" min="0" max="20" step="1" data-f="fu-repeat" data-j="${j}" value="${esc(f.repeat || 0)}">
-        <span class="muted">more times</span>
         <button class="danger" data-act="delfu" data-j="${j}">✕</button>
       </div>
+      <div class="fu-top">
+        <span class="muted">Repeat</span>
+        <input class="num" type="number" min="0" max="20" step="1" data-f="fu-repeat" data-j="${j}" value="${esc(f.repeat || 0)}" ${f.forever ? 'disabled' : ''}>
+        <span class="muted">more times</span>
+        <label class="chk"><input type="checkbox" data-f="fu-forever" data-j="${j}" ${f.forever ? 'checked' : ''}> keep repeating until they continue</label>
+      </div>
       <textarea data-f="fu-text" data-j="${j}" placeholder="Follow-up message...">${esc(f.text)}</textarea>
+      ${(f.variants || [])
+        .map(
+          (v, vi) => `<div class="var">
+        <textarea data-f="fu-var" data-j="${j}" data-v="${vi}" placeholder="Another version of this message...">${esc(v)}</textarea>
+        <button class="danger" data-act="delvar" data-j="${j}" data-v="${vi}">✕</button>
+      </div>`
+        )
+        .join('')}
+      <button data-act="addvar" data-j="${j}">+ Add another version (picked at random)</button>
     </div>`
     )
     .join('');
   return `<label>Follow-ups (reminders)</label>
-    <div class="hint">Sent if the person hasn't moved on. They stop as soon as the person taps a button that goes to another step. The step's buttons are attached so they can continue. "Repeat" sends the same message again after the same wait, e.g. after 1 hour, repeat 2 = at 1h, 2h and 3h.</div>
+    <div class="hint">Sent if the person hasn't moved on. They stop as soon as the person taps a button that goes to another step, or if they block the bot. The step's buttons are attached so they can continue.<br>
+    <b>Send after</b>: fill only the first time for a fixed wait, or fill "to" as well for a random wait between the two (e.g. 1 to 3 hours).<br>
+    <b>Repeat</b>: sends again after the same kind of wait, e.g. 1 hour with repeat 2 = three messages. Tick "keep repeating" to go on until they continue (at least 5 minutes between messages).<br>
+    <b>Extra versions</b>: each time, one version is picked at random, never the same one twice in a row.</div>
     ${rows}
     <button data-act="addfu">+ Add follow-up</button>`;
 }
@@ -180,6 +202,15 @@ $('#steps').addEventListener('input', (e) => {
     const fu = (step.followups || [])[+e.target.dataset.j];
     if (!fu) return;
     if (f === 'fu-after') fu.after = e.target.value === '' ? '' : Number(e.target.value);
+    if (f === 'fu-afterMax') {
+      if (e.target.value === '') delete fu.afterMax;
+      else fu.afterMax = Number(e.target.value);
+    }
+    if (f === 'fu-forever') fu.forever = e.target.checked;
+    if (f === 'fu-var') {
+      fu.variants = fu.variants || [];
+      fu.variants[+e.target.dataset.v] = e.target.value;
+    }
     if (f === 'fu-unit') fu.unit = e.target.value;
     if (f === 'fu-repeat') fu.repeat = Number(e.target.value) || 0;
     if (f === 'fu-text') fu.text = e.target.value;
@@ -211,6 +242,7 @@ $('#steps').addEventListener('change', (e) => {
     toast(`Step "${id}" created and linked. Scroll down to write its message.`);
     return;
   }
+  if (card && e.target.dataset.f === 'fu-forever') return render(); // greys out the "repeat" number when ticked
   if (!card || e.target.dataset.f !== 'kind') return;
   const b = data.steps[card.dataset.id].buttons[e.target.dataset.i];
   if (e.target.value === 'url') { delete b.goto; b.url = 'https://'; }
@@ -230,6 +262,12 @@ $('#steps').addEventListener('click', (e) => {
     step.followups.push({ after: 1, unit: 'hours', repeat: 0, text: 'Hey {name} 👋 just a reminder, tap below to continue.' });
   } else if (act === 'delfu') {
     step.followups.splice(+e.target.dataset.j, 1);
+  } else if (act === 'addvar') {
+    const fu = step.followups[+e.target.dataset.j];
+    fu.variants = fu.variants || [];
+    fu.variants.push('');
+  } else if (act === 'delvar') {
+    step.followups[+e.target.dataset.j].variants.splice(+e.target.dataset.v, 1);
   } else if (act === 'addbtn') {
     step.buttons = step.buttons || [];
     step.buttons.push({ label: 'New button', goto: data.start });
