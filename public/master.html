@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>My Customers</title>
+<style>
+  :root { --bg:#0f1720; --card:#17212c; --line:#26343f; --text:#e8eef3; --muted:#8fa1b0; --accent:#2f9bff; --danger:#ff5d5d; --ok:#34c77b; --warn:#f0b429; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.4 system-ui,sans-serif; }
+  header { padding:14px 16px 6px; }
+  header h1 { font-size:18px; margin:0; }
+  .muted { color:var(--muted); font-size:13px; }
+  main { max-width:760px; margin:0 auto; padding:0 16px 40px; }
+  #bar { position:sticky; top:0; z-index:5; background:var(--bg); padding:10px 16px; border-bottom:1px solid var(--line); }
+  #bar .inner { max-width:760px; margin:0 auto; display:flex; flex-direction:column; gap:8px; }
+  .actions { display:flex; gap:8px; flex-wrap:wrap; }
+  input { width:100%; background:#0f1720; color:var(--text); border:1px solid var(--line); border-radius:8px; padding:10px; font:inherit; }
+  label { display:block; font-size:12px; color:var(--muted); margin:10px 0 4px; }
+  button { background:var(--card); color:var(--text); border:1px solid var(--line); border-radius:8px; padding:8px 12px; font:inherit; cursor:pointer; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; }
+  button.danger { color:var(--danger); }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px; margin:12px 0; }
+  .warn { border-color:var(--warn); background:#2a2412; color:#f6dd9b; font-size:13px; }
+  .cust .top { display:flex; gap:10px; align-items:center; justify-content:space-between; }
+  .cust .name { font-weight:700; font-size:16px; word-break:break-word; }
+  .cust .more { display:none; margin-top:10px; padding-top:10px; border-top:1px solid var(--line); gap:8px; flex-wrap:wrap; }
+  .cust.open .more { display:flex; }
+  .badge { font-size:11px; border-radius:20px; padding:2px 8px; margin-left:6px; background:var(--warn); color:#2a1d00; font-weight:600; }
+  .badge.main { background:var(--accent); color:#fff; }
+  .result { border-color:var(--ok); }
+  .result code { display:block; background:#0f1720; border:1px solid var(--line); border-radius:8px; padding:8px; margin:4px 0 8px; word-break:break-all; user-select:all; }
+  #toast { position:fixed; bottom:16px; left:50%; transform:translateX(-50%); padding:10px 16px; border-radius:8px; background:var(--ok); color:#06210f; font-weight:600; display:none; max-width:90%; z-index:10; }
+  #toast.err { background:var(--danger); color:#fff; }
+  a { color:var(--accent); }
+  .empty { text-align:center; padding:30px 10px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🤖 My Customers <span class="muted" id="count"></span></h1>
+</header>
+<div id="bar">
+  <div class="inner">
+    <input id="search" type="search" placeholder="🔍 Search customers by name, ID or bot username...">
+    <div class="actions">
+      <button class="primary" id="addBtn">+ Add customer</button>
+      <button id="backupBtn">⬇ Backup</button>
+      <button id="restoreBtn">⬆ Restore</button>
+      <input type="file" id="restoreFile" accept=".json,application/json" style="display:none">
+    </div>
+  </div>
+</div>
+<main>
+  <div class="card warn" id="warnBox">⚠️ On free hosting, saved data can reset when the app restarts. Tap <b>Backup</b> after adding customers or big changes, and <b>Restore</b> if anything disappears.</div>
+
+  <div class="card" id="addForm" style="display:none">
+    <b>Add a customer</b>
+    <label>Customer name</label>
+    <input id="fName" placeholder="e.g. Acme Store">
+    <label>Their bot token (from BotFather)</label>
+    <input id="fToken" placeholder="123456789:AAH..." autocomplete="off">
+    <label>Customer ID (optional, a short label used in addresses)</label>
+    <input id="fId" placeholder="leave empty to make one from the name">
+    <div class="muted" style="margin-top:10px">Only you can edit their bot. They don't get a login.</div>
+    <div class="actions" style="margin-top:12px">
+      <button class="primary" id="createBtn">Create customer</button>
+      <button id="cancelAdd">Cancel</button>
+    </div>
+  </div>
+
+  <div id="list"></div>
+  <div class="empty" id="more" style="display:none"><button id="moreBtn">Show more</button></div>
+</main>
+<div id="toast"></div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const PAGE = 50;
+let tenants = [];
+let shown = PAGE;
+let openRow = null;
+
+const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+function toast(msg, isErr) {
+  const t = $('#toast');
+  t.textContent = msg;
+  t.className = isErr ? 'err' : '';
+  t.style.display = 'block';
+  clearTimeout(toast.timer);
+  toast.timer = setTimeout(() => (t.style.display = 'none'), isErr ? 5000 : 2500);
+}
+
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  let j = {};
+  try { j = await r.json(); } catch (e) {}
+  if (!r.ok) throw new Error(j.error || 'Something went wrong (' + r.status + ')');
+  return j;
+}
+
+const jsonOpts = (method, body) => ({ method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+
+function filtered() {
+  const q = $('#search').value.trim().toLowerCase();
+  if (!q) return tenants;
+  return tenants.filter((t) => (t.name + ' ' + t.id + ' ' + (t.botUsername || '')).toLowerCase().includes(q));
+}
+
+function render() {
+  const list = filtered();
+  $('#count').textContent = `· ${tenants.length} customer${tenants.length === 1 ? '' : 's'}`;
+  const box = $('#list');
+  if (!list.length) {
+    box.innerHTML = `<div class="empty muted">${tenants.length ? 'No customers match your search.' : 'No customers yet. Tap "+ Add customer".'}</div>`;
+    $('#more').style.display = 'none';
+    return;
+  }
+  box.innerHTML = list.slice(0, shown).map((t) => `
+    <div class="card cust ${openRow === t.id ? 'open' : ''}" data-id="${esc(t.id)}">
+      <div class="top">
+        <div>
+          <div class="name">${esc(t.name)}${t.isMain ? '<span class="badge main">MAIN</span>' : ''}${t.active ? '' : '<span class="badge">PAUSED</span>'}</div>
+          <div class="muted">${t.botUsername ? '<a href="https://t.me/' + esc(t.botUsername) + '" target="_blank" rel="noopener">@' + esc(t.botUsername) + '</a> · ' : ''}${esc(t.id)} · ${t.users} user${t.users === 1 ? '' : 's'} · ${t.pending} reminder${t.pending === 1 ? '' : 's'}</div>
+        </div>
+        <div class="actions">
+          <button class="primary" data-act="open">Open</button>
+          ${t.isMain ? '' : '<button data-act="more">⋯</button>'}
+        </div>
+      </div>
+      <div class="more">
+        <button data-act="rename">Rename</button>
+        <button data-act="token">Change token</button>
+        <button data-act="pause">${t.active ? 'Pause bot' : 'Resume bot'}</button>
+        <button class="danger" data-act="delete">Delete</button>
+      </div>
+    </div>`).join('');
+  $('#more').style.display = list.length > shown ? 'block' : 'none';
+}
+
+async function load() {
+  const out = await api('/api/tenants');
+  tenants = out.tenants;
+  render();
+}
+
+$('#search').addEventListener('input', () => { shown = PAGE; render(); });
+$('#moreBtn').onclick = () => { shown += PAGE; render(); };
+
+$('#addBtn').onclick = () => {
+  const f = $('#addForm');
+  f.style.display = f.style.display === 'none' ? 'block' : 'none';
+  if (f.style.display === 'block') $('#fName').focus();
+};
+$('#cancelAdd').onclick = () => ($('#addForm').style.display = 'none');
+
+$('#createBtn').onclick = async () => {
+  const btn = $('#createBtn');
+  btn.disabled = true;
+  try {
+    const out = await api('/api/tenants', jsonOpts('POST', {
+      name: $('#fName').value, token: $('#fToken').value, id: $('#fId').value,
+    }));
+    ['#fName', '#fToken', '#fId'].forEach((s) => ($(s).value = ''));
+    $('#addForm').style.display = 'none';
+    toast(`Added ${out.tenant.name}. Tap Open to set up their messages.`);
+    await load();
+  } catch (e) { toast(e.message, true); }
+  btn.disabled = false;
+};
+
+$('#list').addEventListener('click', async (e) => {
+  const act = e.target.dataset.act;
+  if (!act) return;
+  const row = e.target.closest('.cust');
+  const id = row.dataset.id;
+  const t = tenants.find((x) => x.id === id);
+  try {
+    if (act === 'open') {
+      try { sessionStorage.setItem('customers', JSON.stringify(filtered().map((x) => x.id))); } catch (err) {}
+      location.href = '/c/' + id + '/';
+      return;
+    }
+    if (act === 'more') { openRow = openRow === id ? null : id; return render(); }
+    if (act === 'rename') {
+      const name = prompt('New name for this customer:', t.name);
+      if (!name) return;
+      await api('/api/tenants/' + id, jsonOpts('PATCH', { name }));
+      toast('Renamed');
+    } else if (act === 'token') {
+      const token = prompt('Paste the new bot token for ' + t.name + ':');
+      if (!token) return;
+      await api('/api/tenants/' + id, jsonOpts('PATCH', { token }));
+      toast('Token changed. The bot is now using it.');
+    } else if (act === 'pause') {
+      await api('/api/tenants/' + id, jsonOpts('PATCH', { active: !t.active }));
+      toast(t.active ? 'Bot paused. It will not reply until you resume it.' : 'Bot resumed');
+    } else if (act === 'delete') {
+      const typed = prompt('This removes ' + t.name + ' and stops their bot. Their data is kept aside on the server, but not in your backups unless you made one first.\n\nType the customer ID (' + id + ') to confirm:');
+      if (typed !== id) return typed === null ? undefined : toast('ID did not match. Nothing was deleted.', true);
+      await api('/api/tenants/' + id, { method: 'DELETE' });
+      openRow = null;
+      toast('Deleted');
+    }
+    await load();
+  } catch (err) { toast(err.message, true); }
+});
+
+$('#backupBtn').onclick = () => { location.href = '/api/export'; };
+$('#restoreBtn').onclick = () => $('#restoreFile').click();
+$('#restoreFile').onchange = async (e) => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  try {
+    const text = await file.text();
+    const parsed = JSON.parse(text);
+    if (!confirm('Restore from "' + file.name + '"?\nCustomers in the file are added, and ones with the same ID are overwritten.')) return;
+    const out = await api('/api/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: text });
+    toast(`Restored ${out.customers} customer${out.customers === 1 ? '' : 's'}`);
+    await load();
+  } catch (err) { toast(err.message || 'Could not read that file.', true); }
+};
+
+load().catch((e) => toast(e.message, true));
+</script>
+</body>
+</html>
