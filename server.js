@@ -204,8 +204,15 @@ async function handleMaster(req, res, p, m) {
   }
   if (p === '/api/export' && m === 'GET') {
     const day = new Date().toISOString().slice(0, 10);
-    return send(res, 200, JSON.stringify(platform.exportAll()), 'application/json', {
-      'Content-Disposition': `attachment; filename="bot-backup-${day}.json"`,
+    const onlyId = new URL(req.url, 'http://x').searchParams.get('id');
+    const data = platform.exportAll(onlyId || undefined);
+    // The file name says whose backup it is, e.g. bot-backup-claude-2026-10-23.json
+    const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
+    const file = onlyId
+      ? `bot-backup-${slug(data.label) || onlyId}-${day}.json`
+      : `bot-backup-ALL-${platform.allTenants().length}-customers-${day}.json`;
+    return send(res, 200, JSON.stringify(data), 'application/json', {
+      'Content-Disposition': `attachment; filename="${file}"`,
     });
   }
   if (p === '/api/import' && m === 'POST') {

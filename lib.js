@@ -4,6 +4,32 @@ const crypto = require('crypto');
 
 const ID_RE = /^[a-z0-9_-]{1,40}$/;
 const UNIT_MS = { minutes: 60 * 1000, hours: 60 * 60 * 1000, days: 24 * 60 * 60 * 1000 };
+// A follow-up that repeats forever must wait at least this long between messages, so nobody gets spammed
+// (and the bot doesn't get reported). Can be lowered with MIN_LOOP_MINUTES, only useful for testing.
+const MIN_LOOP_MS = (process.env.MIN_LOOP_MINUTES !== undefined ? Number(process.env.MIN_LOOP_MINUTES) : 5) * 60 * 1000;
+
+// ---------- Follow-up helpers ----------
+
+// How long to wait: a fixed time, or a random time between "after" and "afterMax"
+function randomGap(f) {
+  const lo = Number(f.after) * UNIT_MS[f.unit];
+  const hi = Number(f.afterMax) > Number(f.after) ? Number(f.afterMax) * UNIT_MS[f.unit] : lo;
+  return lo + Math.random() * (hi - lo);
+}
+
+// All versions of the message (the main text plus any extra versions)
+function followupTexts(f) {
+  return [f.text, ...(f.variants || []).filter((v) => typeof v === 'string' && v.trim())];
+}
+
+// Picks one version at random, never the same one twice in a row
+function pickVariant(f, avoid) {
+  const n = followupTexts(f).length;
+  if (n <= 1) return 0;
+  let idx = Math.floor(Math.random() * n);
+  if (idx === avoid) idx = (idx + 1 + Math.floor(Math.random() * (n - 1))) % n;
+  return idx;
+}
 
 // ---------- Steps: validation and cleaning ----------
 
@@ -44,6 +70,20 @@ function validateSteps(data) {
       if (!(Number(f.after) > 0)) return `A follow-up in "${id}" needs a time greater than 0.`;
       const rep = Number(f.repeat || 0);
       if (!Number.isInteger(rep) || rep < 0 || rep > 20) return `A follow-up in "${id}": "repeat" must be a whole number from 0 to 20.`;
+      if (f.afterMax !== undefined && f.afterMax !== '' && f.afterMax !== null) {
+        if (!(Number(f.afterMax) > 0)) return `A follow-up in "${id}": the second ("to") time must be greater than 0.`;
+        if (Number(f.afterMax) < Number(f.after)) return `A follow-up in "${id}": the second ("to") time must be bigger than the first, or leave it empty.`;
+      }
+      if (f.variants !== undefined) {
+        if (!Array.isArray(f.variants) || f.variants.length > 10) return `A follow-up in "${id}" can have at most 10 extra versions.`;
+        for (const v of f.variants) {
+          if (typeof v !== 'string') return `A follow-up in "${id}" has an invalid extra version.`;
+          if (v.length > 4000) return `An extra version in "${id}" is too long (max 4000 characters).`;
+        }
+      }
+      if (f.forever && Number(f.after) * UNIT_MS[f.unit] < MIN_LOOP_MS) {
+        return `A follow-up in "${id}" that repeats forever must wait at least ${Math.round(MIN_LOOP_MS / 60000)} minutes between messages.`;
+      }
     }
   }
   return null;
@@ -65,12 +105,14 @@ function cleanSteps(data) {
     };
     const fus = s.followups || [];
     if (fus.length) {
-      clean.steps[id].followups = fus.map((f) => ({
-        text: f.text,
-        after: Number(f.after),
-        unit: f.unit,
-        repeat: Number(f.repeat || 0),
-      }));
+      clean.steps[id].followups = fus.map((f) => {
+        const out = { text: f.text, after: Number(f.after), unit: f.unit, repeat: Number(f.repeat || 0) };
+        if (Number(f.afterMax) > Number(f.after)) out.afterMax = Number(f.afterMax); // random wait between the two
+        const variants = (f.variants || []).filter((v) => typeof v === 'string' && v.trim());
+        if (variants.length) out.variants = variants;
+        if (f.forever) out.forever = true;
+        return out;
+      });
     }
   }
   return clean;
@@ -232,8 +274,16 @@ function createStore(dir, templateFile) {
       const now = Date.now();
       const items = [];
       fus.forEach((f, fi) => {
-        const gap = Number(f.after) * UNIT_MS[f.unit];
-        for (let k = 0; k <= Number(f.repeat || 0); k++) items.push({ due: now + gap * (k + 1), fi, k });
+        if (f.forever) {
+          // One "loop" item: after each send it is scheduled again, until the person moves on
+          items.push({ due: now + randomGap(f), fi, k: 0, loop: true });
+          return;
+        }
+        let t = now;
+        for (let k = 0; k <= Number(f.repeat || 0); k++) {
+          t += randomGap(f);
+          items.push({ due: t, fi, k });
+        }
       });
       if (!items.length) {
         if (!(chatId in sched)) return; // nothing to cancel, nothing to add
@@ -264,7 +314,7 @@ function createStore(dir, templateFile) {
 }
 
 module.exports = {
-  ID_RE, UNIT_MS,
+  ID_RE, UNIT_MS, randomGap, followupTexts, pickVariant,
   validateSteps, cleanSteps, escapeHtml, fillPlaceholders,
   signLink, verifyLink, buildTrackedUrl,
   writeJsonAtomic, createStore,

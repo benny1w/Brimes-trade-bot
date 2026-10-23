@@ -262,14 +262,23 @@ class Platform {
 
   // ----- backup and restore (important on free hosting, where files can reset) -----
 
-  exportAll() {
+  // Everything, or just one customer when onlyId is given
+  exportAll(onlyId) {
+    const list = onlyId ? [this.getTenant(onlyId)].filter(Boolean) : this.allTenants();
+    if (onlyId && !list.length) throw userError('Customer not found.');
     const data = {};
-    for (const t of this.allTenants()) {
+    for (const t of list) {
       const s = this.getStore(t.id);
       s.flush();
       data[t.id] = { steps: s.loadSteps(), users: s.loadUsers(), schedule: s.loadSchedule() };
     }
-    return { version: 1, exportedAt: new Date().toISOString(), tenants: Object.values(this.tenants), data };
+    return {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      label: onlyId ? list[0].name : 'All customers',
+      tenants: list.filter((t) => !t.isMain),
+      data,
+    };
   }
 
   async importAll(obj) {

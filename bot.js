@@ -1,4 +1,4 @@
-const { fillPlaceholders, buildTrackedUrl } = require('./lib');
+const { fillPlaceholders, buildTrackedUrl, randomGap, followupTexts, pickVariant } = require('./lib');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const UPDATE_TYPES = ['message', 'callback_query'];
@@ -142,31 +142,33 @@ function createBot({ tenant, store, publicBase, webhookSecret }) {
     enqueue(`${tenant.id}:${chatId}`, () => handleUpdate(update));
   }
 
-  // Sends one follow-up. Returns 'sent', 'gone' (person blocked the bot / chat missing) or 'drop' (can't be sent).
-  // Network problems and Telegram overload throw, so the same follow-up is tried again on the next check.
-  async function sendFollowup(chatId, stepId, fi, name) {
+  // Sends one follow-up (picking one of its versions at random, never the same as last time).
+  // Returns { result: 'sent' | 'gone' | 'drop', idx }: 'gone' = the person blocked the bot or the chat is missing,
+  // 'drop' = it can't be sent. Network problems and Telegram overload throw, so it is tried again on the next check.
+  async function sendFollowup(chatId, stepId, fi, name, avoid) {
     const step = store.loadSteps().steps[stepId];
     const fu = step && (step.followups || [])[fi];
-    if (!fu) return 'drop'; // step or follow-up was deleted in the admin
-    const text = fillPlaceholders(fu.text, { first_name: name });
+    if (!fu) return { result: 'drop' }; // step or follow-up was deleted in the admin
+    const idx = pickVariant(fu, avoid);
+    const text = fillPlaceholders(followupTexts(fu)[idx], { first_name: name });
     const reply_markup = keyboardFor(step, stepId, chatId); // same buttons as the step, so they can continue
     const isGone = (e) => /forbidden|chat not found|deactivated|blocked/i.test(e.description || '');
     const retryLater = (e) => !e.description || e.code === 429 || e.code >= 500;
     try {
       await tg('sendMessage', { chat_id: chatId, text, parse_mode: 'HTML', reply_markup });
-      return 'sent';
+      return { result: 'sent', idx };
     } catch (e) {
       if (retryLater(e)) throw e;
-      if (isGone(e)) return 'gone';
+      if (isGone(e)) return { result: 'gone' };
       console.error(tag, 'Follow-up HTML send failed, retrying as plain text:', e.message);
     }
     try {
       await tg('sendMessage', { chat_id: chatId, text: text.replace(/<[^>]+>/g, ''), reply_markup });
-      return 'sent';
+      return { result: 'sent', idx };
     } catch (e) {
       if (retryLater(e)) throw e;
       console.error(tag, 'Follow-up dropped:', e.message);
-      return isGone(e) ? 'gone' : 'drop';
+      return { result: isGone(e) ? 'gone' : 'drop' };
     }
   }
 
@@ -179,12 +181,15 @@ function createBot({ tenant, store, publicBase, webhookSecret }) {
       // At most one follow-up per person per check, so nobody gets a burst of messages
       for (const [chatId, plan] of Object.entries(store.loadSchedule())) {
         const item = plan.items.filter((i) => i.due <= now).sort((a, b) => a.due - b.due)[0];
-        if (item) jobs.push({ chatId, planId: plan.id, stepId: plan.stepId, name: plan.name, item });
+        if (item) {
+          const avoid = plan.last ? plan.last[item.fi] : undefined;
+          jobs.push({ chatId, planId: plan.id, stepId: plan.stepId, name: plan.name, item, avoid });
+        }
       }
       for (const job of jobs) {
-        let result;
+        let out;
         try {
-          result = await sendFollowup(Number(job.chatId), job.stepId, job.item.fi, job.name);
+          out = await sendFollowup(Number(job.chatId), job.stepId, job.item.fi, job.name, job.avoid);
         } catch (e) {
           console.error(tag, 'Follow-up will be retried:', e.message);
           continue;
@@ -192,10 +197,18 @@ function createBot({ tenant, store, publicBase, webhookSecret }) {
         const fresh = store.loadSchedule(); // re-read: the person may have moved on while we were sending
         const plan = fresh[job.chatId];
         if (plan && plan.id === job.planId) {
-          if (result === 'gone') {
-            delete fresh[job.chatId];
+          if (out.result === 'gone') {
+            delete fresh[job.chatId]; // they blocked the bot: stop everything for them
           } else {
+            if (out.result === 'sent') {
+              plan.last = plan.last || {};
+              plan.last[job.item.fi] = out.idx; // remember which version was used, so the next one differs
+            }
+            // A "keep repeating" follow-up is scheduled again with a fresh random wait; anything else is finished
+            const fu = ((store.loadSteps().steps[job.stepId] || {}).followups || [])[job.item.fi];
+            const again = out.result === 'sent' && job.item.loop && fu && fu.forever;
             plan.items = plan.items.filter((i) => !(i.fi === job.item.fi && i.k === job.item.k));
+            if (again) plan.items.push({ due: Date.now() + randomGap(fu), fi: job.item.fi, k: job.item.k, loop: true });
             // If the bot was asleep and several reminders are overdue, spread them out instead of sending all at once
             const t = Date.now();
             plan.items.forEach((i) => {
