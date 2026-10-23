@@ -33,6 +33,38 @@ function pickVariant(f, avoid) {
 
 // ---------- Steps: validation and cleaning ----------
 
+function checkFollowupList(list, where) {
+  const fus = list || [];
+  if (!Array.isArray(fus)) return `Invalid follow-ups in ${where}.`;
+  if (fus.length > 10) return `Too many follow-ups in ${where} (max 10).`;
+    for (const f of fus) {
+      if (!f || typeof f.text !== 'string' || !f.text.trim()) return `A follow-up in ${where} needs some message text.`;
+      if (f.text.length > 4000) return `A follow-up in ${where} is too long (max 4000 characters).`;
+      if (!UNIT_MS[f.unit]) return `A follow-up in ${where} has an invalid time unit.`;
+      if (!(Number(f.after) > 0)) return `A follow-up in ${where} needs a time greater than 0.`;
+      const rep = Number(f.repeat || 0);
+      if (!Number.isInteger(rep) || rep < 0 || rep > 20) return `A follow-up in ${where}: "repeat" must be a whole number from 0 to 20.`;
+      if (f.afterMax !== undefined && f.afterMax !== '' && f.afterMax !== null) {
+        if (!(Number(f.afterMax) > 0)) return `A follow-up in ${where}: the second ("to") time must be greater than 0.`;
+        if (Number(f.afterMax) < Number(f.after)) return `A follow-up in ${where}: the second ("to") time must be bigger than the first, or leave it empty.`;
+      }
+      for (const k of ['image', 'video']) {
+        if (f[k] && !/^https?:\/\//i.test(String(f[k]).trim())) return `A follow-up in ${where}: the ${k} link must start with http:// or https://`;
+      }
+      if (f.variants !== undefined) {
+        if (!Array.isArray(f.variants) || f.variants.length > 10) return `A follow-up in ${where} can have at most 10 extra versions.`;
+        for (const v of f.variants) {
+          if (typeof v !== 'string') return `A follow-up in ${where} has an invalid extra version.`;
+          if (v.length > 4000) return `An extra version in ${where} is too long (max 4000 characters).`;
+        }
+      }
+      if (f.forever && Number(f.after) * UNIT_MS[f.unit] < MIN_LOOP_MS) {
+        return `A follow-up in ${where} that repeats forever must wait at least ${Math.round(MIN_LOOP_MS / 60000)} minutes between messages.`;
+      }
+    }
+  return null;
+}
+
 // Returns an error string, or null if the data is valid.
 function validateSteps(data) {
   if (!data || typeof data !== 'object' || typeof data.steps !== 'object' || data.steps === null) {
@@ -60,33 +92,34 @@ function validateSteps(data) {
         return `Button "${b.label}" in "${id}" points to a step that doesn't exist.`;
       }
     }
-    const fus = step.followups || [];
-    if (!Array.isArray(fus)) return `Step "${id}" has invalid follow-ups.`;
-    if (fus.length > 10) return `Step "${id}" has too many follow-ups (max 10).`;
-    for (const f of fus) {
-      if (!f || typeof f.text !== 'string' || !f.text.trim()) return `A follow-up in "${id}" needs some message text.`;
-      if (f.text.length > 4000) return `A follow-up in "${id}" is too long (max 4000 characters).`;
-      if (!UNIT_MS[f.unit]) return `A follow-up in "${id}" has an invalid time unit.`;
-      if (!(Number(f.after) > 0)) return `A follow-up in "${id}" needs a time greater than 0.`;
-      const rep = Number(f.repeat || 0);
-      if (!Number.isInteger(rep) || rep < 0 || rep > 20) return `A follow-up in "${id}": "repeat" must be a whole number from 0 to 20.`;
-      if (f.afterMax !== undefined && f.afterMax !== '' && f.afterMax !== null) {
-        if (!(Number(f.afterMax) > 0)) return `A follow-up in "${id}": the second ("to") time must be greater than 0.`;
-        if (Number(f.afterMax) < Number(f.after)) return `A follow-up in "${id}": the second ("to") time must be bigger than the first, or leave it empty.`;
-      }
-      if (f.variants !== undefined) {
-        if (!Array.isArray(f.variants) || f.variants.length > 10) return `A follow-up in "${id}" can have at most 10 extra versions.`;
-        for (const v of f.variants) {
-          if (typeof v !== 'string') return `A follow-up in "${id}" has an invalid extra version.`;
-          if (v.length > 4000) return `An extra version in "${id}" is too long (max 4000 characters).`;
-        }
-      }
-      if (f.forever && Number(f.after) * UNIT_MS[f.unit] < MIN_LOOP_MS) {
-        return `A follow-up in "${id}" that repeats forever must wait at least ${Math.round(MIN_LOOP_MS / 60000)} minutes between messages.`;
-      }
-    }
+    const e1 = checkFollowupList(step.followups, `"${id}"`);
+    if (e1) return e1;
   }
+  const e2 = checkFollowupList(data.followups, 'the general follow-ups');
+  if (e2) return e2;
   return null;
+}
+
+function cleanFollowupList(list) {
+  return (list || []).map((f) => {
+    const out = { text: f.text, after: Number(f.after), unit: f.unit, repeat: Number(f.repeat || 0) };
+    if (Number(f.afterMax) > Number(f.after)) out.afterMax = Number(f.afterMax); // random wait between the two
+    const variants = (f.variants || []).filter((v) => typeof v === 'string' && v.trim());
+    if (variants.length) out.variants = variants;
+    if (f.forever) out.forever = true;
+    if (f.image && String(f.image).trim()) out.image = String(f.image).trim();
+    if (f.video && String(f.video).trim()) out.video = String(f.video).trim();
+    return out;
+  });
+}
+
+// Which reminders apply to a step: its own, or none, or the general ones that apply to every step
+function followupsFor(data, stepId) {
+  const step = data && data.steps && data.steps[stepId];
+  if (!step) return [];
+  if (step.followups && step.followups.length) return step.followups;
+  if (step.noFollowups) return [];
+  return data.followups || [];
 }
 
 // Keeps only known fields, so nothing unexpected gets saved.
@@ -107,18 +140,12 @@ function cleanSteps(data) {
         return out;
       }),
     };
-    const fus = s.followups || [];
-    if (fus.length) {
-      clean.steps[id].followups = fus.map((f) => {
-        const out = { text: f.text, after: Number(f.after), unit: f.unit, repeat: Number(f.repeat || 0) };
-        if (Number(f.afterMax) > Number(f.after)) out.afterMax = Number(f.afterMax); // random wait between the two
-        const variants = (f.variants || []).filter((v) => typeof v === 'string' && v.trim());
-        if (variants.length) out.variants = variants;
-        if (f.forever) out.forever = true;
-        return out;
-      });
-    }
+    const own = cleanFollowupList(s.followups);
+    if (own.length) clean.steps[id].followups = own;
+    else if (s.noFollowups) clean.steps[id].noFollowups = true; // this step sends no reminders at all
   }
+  const general = cleanFollowupList(data.followups);
+  if (general.length) clean.followups = general;
   return clean;
 }
 
@@ -284,8 +311,9 @@ function createStore(dir, templateFile) {
     // Every time a step is sent to someone, their pending reminders are replaced with that step's
     // follow-ups. So the moment they tap a button that moves them on, old reminders are cancelled.
     planFollowups(chatId, stepId, from) {
-      const step = store.loadSteps().steps[stepId];
-      const fus = (step && step.followups) || [];
+      const all = store.loadSteps();
+      const step = all.steps[stepId];
+      const fus = followupsFor(all, stepId);
       const sched = store.loadSchedule();
       const now = Date.now();
       const items = [];
@@ -334,7 +362,7 @@ function createStore(dir, templateFile) {
 }
 
 module.exports = {
-  ID_RE, UNIT_MS, randomGap, followupTexts, pickVariant,
+  ID_RE, UNIT_MS, followupsFor, randomGap, followupTexts, pickVariant,
   validateSteps, cleanSteps, escapeHtml, fillPlaceholders,
   signLink, verifyLink, buildTrackedUrl,
   writeJsonAtomic, createStore,
