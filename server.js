@@ -176,6 +176,7 @@ async function handleCustomer(req, res, auth, id, rest) {
   if (m === 'GET' && rest === '/api/stats') {
     return send(res, 200, { users: Object.keys(store.loadUsers()).length, pending: store.pendingCount() });
   }
+  if (m === 'GET' && rest === '/api/users') return send(res, 200, { users: store.listUsers().slice(0, 1000) });
   send(res, 404, { error: 'Not found' });
 }
 

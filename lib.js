@@ -99,7 +99,11 @@ function cleanSteps(data) {
       buttons: (s.buttons || []).map((b) => {
         if (!b.url) return { label: b.label, goto: b.goto };
         const out = { label: b.label, url: b.url };
-        if (b.then) out.then = b.then;
+        if (b.then) {
+          out.then = b.then;
+          const m = Number(b.thenAfter);
+          out.thenAfter = m > 0 && m <= 1440 ? m : 1; // minutes to wait before sending the next step
+        }
         return out;
       }),
     };
@@ -222,12 +226,17 @@ function createStore(dir, templateFile) {
       return users;
     },
 
-    trackUser(from) {
+    trackUser(from, via) {
       if (!from) return;
-      store.loadUsers()[from.id] = {
+      const all = store.loadUsers();
+      const old = all[from.id] || {};
+      const now = new Date().toISOString();
+      all[from.id] = {
         first_name: from.first_name || '',
         username: from.username || '',
-        last_seen: new Date().toISOString(),
+        first_seen: old.first_seen || now,
+        last_seen: now,
+        via: old.via || via || 'bot', // how they first reached you: 'bot' (messaged it) or 'channel' (asked to join)
       };
       usersDirty = true;
       if (!usersTimer) {
@@ -261,6 +270,13 @@ function createStore(dir, templateFile) {
       writeJsonAtomic(files.schedule, s);
     },
 
+    // The people list for the admin page (newest first)
+    listUsers() {
+      return Object.entries(store.loadUsers())
+        .map(([id, u]) => ({ id, ...u }))
+        .sort((a, b) => String(b.last_seen).localeCompare(String(a.last_seen)));
+    },
+
     pendingCount() {
       return Object.values(store.loadSchedule()).reduce((n, p) => n + p.items.length, 0);
     },
@@ -273,6 +289,10 @@ function createStore(dir, templateFile) {
       const sched = store.loadSchedule();
       const now = Date.now();
       const items = [];
+      // Link buttons with a "then" step: the real link is shown as-is, and the next step follows by itself after a short wait
+      ((step && step.buttons) || []).forEach((b, bi) => {
+        if (b.url && b.then) items.push({ due: now + (Number(b.thenAfter) > 0 ? Number(b.thenAfter) : 1) * 60 * 1000, step: b.then, fi: -1 - bi, k: 0 });
+      });
       fus.forEach((f, fi) => {
         if (f.forever) {
           // One "loop" item: after each send it is scheduled again, until the person moves on

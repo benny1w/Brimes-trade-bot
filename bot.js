@@ -1,7 +1,7 @@
 const { fillPlaceholders, buildTrackedUrl, randomGap, followupTexts, pickVariant } = require('./lib');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const UPDATE_TYPES = ['message', 'callback_query'];
+const UPDATE_TYPES = ['message', 'callback_query', 'chat_join_request'];
 
 // Handle each person's updates one at a time and in order (different people still run in parallel).
 // Without this, two quick taps could finish out of order and leave the wrong reminders running.
@@ -60,9 +60,7 @@ function createBot({ tenant, store, publicBase, webhookSecret }) {
     return {
       inline_keyboard: buttons.map((b, idx) => {
         if (!b.url) return [{ text: b.label, callback_data: b.goto }];
-        // Link button with a "then" step: route through our server so the next step is sent too
-        const tracked = b.then ? buildTrackedUrl(publicBase, tenant.token, tenant.id, chatId, stepId, idx) : null;
-        return [{ text: b.label, url: tracked || b.url }];
+        return [{ text: b.label, url: b.url }]; // exactly the link you typed, nothing added
       }),
     };
   }
@@ -115,8 +113,29 @@ function createBot({ tenant, store, publicBase, webhookSecret }) {
     }
   }
 
+  // Someone asked to join a channel/group this bot manages: accept them, then message them straight away.
+  // (Needs the bot to be an admin with "invite users" and the invite link set to "request admin approval".)
+  async function handleJoinRequest(req) {
+    const user = req.from;
+    store.trackUser(user, 'channel');
+    try {
+      await tg('approveChatJoinRequest', { chat_id: req.chat.id, user_id: user.id });
+      console.log(tag, `accepted ${user.id} into ${req.chat.title || req.chat.id}`);
+    } catch (e) {
+      // Already accepted / request expired is fine; anything else (e.g. bot is not an admin) means we can't help
+      if (!/already|HIDE_REQUESTER_MISSING|USER_ALREADY_PARTICIPANT/i.test(e.description || '')) {
+        console.error(tag, 'Could not accept join request:', e.message);
+        return;
+      }
+    }
+    // The request gives the bot a direct line to the person (valid for a few minutes), even if they never opened the bot
+    await sendStep(req.user_chat_id || user.id, store.loadSteps().start, user);
+  }
+
   async function handleUpdate(update) {
-    if (update.message && update.message.text) {
+    if (update.chat_join_request) {
+      await handleJoinRequest(update.chat_join_request);
+    } else if (update.message && update.message.text) {
       const msg = update.message;
       store.trackUser(msg.from);
       // /start, /menu or any other text: show the main menu
@@ -136,6 +155,7 @@ function createBot({ tenant, store, publicBase, webhookSecret }) {
   // Called for every update, from webhook or polling
   function receive(update) {
     const chatId =
+      (update.chat_join_request && (update.chat_join_request.user_chat_id || update.chat_join_request.from.id)) ||
       (update.message && update.message.chat.id) ||
       (update.callback_query && update.callback_query.message && update.callback_query.message.chat.id) ||
       'other';
@@ -188,6 +208,19 @@ function createBot({ tenant, store, publicBase, webhookSecret }) {
       }
       for (const job of jobs) {
         let out;
+        if (job.item.step) {
+          // "Open link, then show next step": the wait is over, send it (this also starts that step's own reminders)
+          const plan0 = store.loadSchedule()[job.chatId];
+          if (plan0) plan0.items = plan0.items.filter((i) => i !== job.item && !(i.fi === job.item.fi && i.k === job.item.k));
+          try {
+            await sendStep(Number(job.chatId), job.item.step, { first_name: job.name });
+          } catch (e) {
+            console.error(tag, 'Could not send next step:', e.message);
+            if (plan0) store.saveSchedule(store.loadSchedule());
+          }
+          await sleep(40);
+          continue;
+        }
         try {
           out = await sendFollowup(Number(job.chatId), job.stepId, job.item.fi, job.name, job.avoid);
         } catch (e) {
