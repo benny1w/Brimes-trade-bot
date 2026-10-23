@@ -60,6 +60,7 @@
 let data = { start: '', steps: {} };
 let dirty = false; // unsaved changes on this page
 let me = null;
+const owner = (id) => (id === '__general__' ? data : data.steps[id]);
 const myId = (location.pathname.match(/^\/c\/([a-z0-9-]+)\//) || [])[1];
 const $ = (s) => document.querySelector(s);
 
@@ -103,8 +104,8 @@ function stepOptions(selected) {
   return items + '<option value="__new__">➕ Create new step...</option>';
 }
 
-function followupsHtml(step) {
-  const rows = (step.followups || [])
+function followupRows(list) {
+  const rows = (list || [])
     .map(
       (f, j) => `
     <div class="fu">
@@ -125,6 +126,8 @@ function followupsHtml(step) {
         <label class="chk"><input type="checkbox" data-f="fu-forever" data-j="${j}" ${f.forever ? 'checked' : ''}> keep repeating until they continue</label>
       </div>
       <textarea data-f="fu-text" data-j="${j}" placeholder="Follow-up message...">${esc(f.text)}</textarea>
+      <input data-f="fu-image" data-j="${j}" placeholder="Picture link (optional) https://..." value="${esc(f.image || '')}">
+      <input data-f="fu-video" data-j="${j}" placeholder="Video link (optional) https://... .mp4" value="${esc(f.video || '')}">
       ${(f.variants || [])
         .map(
           (v, vi) => `<div class="var">
@@ -137,13 +140,32 @@ function followupsHtml(step) {
     </div>`
     )
     .join('');
-  return `<label>Follow-ups (reminders)</label>
-    <div class="hint">Sent if the person hasn't moved on. They stop as soon as the person taps a button that goes to another step, or if they block the bot. The step's buttons are attached so they can continue.<br>
-    <b>Send after</b>: fill only the first time for a fixed wait, or fill "to" as well for a random wait between the two (e.g. 1 to 3 hours).<br>
-    <b>Repeat</b>: sends again after the same kind of wait, e.g. 1 hour with repeat 2 = three messages. Tick "keep repeating" to go on until they continue (at least 5 minutes between messages).<br>
-    <b>Extra versions</b>: each time, one version is picked at random, never the same one twice in a row.</div>
-    ${rows}
-    <button data-act="addfu">+ Add follow-up</button>`;
+  return rows + '<button data-act="addfu">+ Add follow-up</button>';
+}
+
+const FU_HELP = `<div class="hint"><b>Send after</b>: fill only the first time for a fixed wait, or fill "to" as well for a random wait between the two (e.g. 1 to 3 hours).<br>
+  <b>Repeat</b>: sends again after the same kind of wait. Tick "keep repeating" to go on until they continue (at least 5 minutes between messages).<br>
+  <b>Picture / video</b>: paste a link (a direct .mp4 link for video). It is sent with the message. If both are filled, only the video is sent.<br>
+  <b>Extra versions</b>: each time, one version is picked at random, never the same twice in a row.</div>`;
+
+// One place for reminders that apply to EVERY step (unless a step says otherwise)
+function generalHtml() {
+  return `<label>⏰ Reminders for all steps</label>
+    <div class="hint">Set them once here. If someone gets any step and doesn't tap a button, they get these. As soon as they move to another step, the old step's reminders are deleted and the new step's start. You can change one step in its own card ("Reminders for this step").</div>
+    ${FU_HELP}
+    ${followupRows(data.followups)}`;
+}
+
+function followupsHtml(step) {
+  const mode = step.followups && step.followups.length ? 'custom' : step.noFollowups ? 'none' : 'general';
+  const general = (data.followups || []).length;
+  return `<label>Reminders for this step</label>
+    <select data-f="fumode">
+      <option value="general" ${mode === 'general' ? 'selected' : ''}>Use the general reminders${general ? '' : ' (none set yet)'}</option>
+      <option value="custom" ${mode === 'custom' ? 'selected' : ''}>Its own reminders</option>
+      <option value="none" ${mode === 'none' ? 'selected' : ''}>No reminders on this step</option>
+    </select>
+    ${mode === 'custom' ? FU_HELP + followupRows(step.followups) : ''}`;
 }
 
 function thenOptions(selected) {
@@ -163,6 +185,11 @@ function esc(s) {
 function render() {
   const wrap = $('#steps');
   wrap.innerHTML = '';
+  const gcard = document.createElement('div');
+  gcard.className = 'card';
+  gcard.dataset.id = '__general__';
+  gcard.innerHTML = generalHtml();
+  wrap.appendChild(gcard);
   Object.entries(data.steps).forEach(([id, step]) => {
     const card = document.createElement('div');
     card.className = 'card' + (id === data.start ? ' start' : '');
@@ -211,7 +238,7 @@ function render() {
 $('#steps').addEventListener('input', (e) => {
   const card = e.target.closest('.card');
   if (!card) return;
-  const step = data.steps[card.dataset.id];
+  const step = owner(card.dataset.id);
   const f = e.target.dataset.f;
   const i = e.target.dataset.i;
   if (f === 'text' || f === 'image') step[f] = e.target.value;
@@ -231,6 +258,10 @@ $('#steps').addEventListener('input', (e) => {
     if (f === 'fu-unit') fu.unit = e.target.value;
     if (f === 'fu-repeat') fu.repeat = Number(e.target.value) || 0;
     if (f === 'fu-text') fu.text = e.target.value;
+    if (f === 'fu-image' || f === 'fu-video') {
+      if (e.target.value.trim()) fu[f.slice(3)] = e.target.value;
+      else delete fu[f.slice(3)];
+    }
   } else if (i !== undefined) {
     const b = step.buttons[i];
     if (f === 'label') b.label = e.target.value;
@@ -260,6 +291,17 @@ $('#steps').addEventListener('change', (e) => {
     toast(`Step "${id}" created and linked. Scroll down to write its message.`);
     return;
   }
+  if (card && e.target.dataset.f === 'fumode') {
+    const st = data.steps[card.dataset.id];
+    const m = e.target.value;
+    delete st.noFollowups;
+    if (m === 'custom') st.followups = [{ after: 1, unit: 'hours', repeat: 0, text: 'Hey {name} 👋 just a reminder, tap below to continue.' }];
+    else {
+      delete st.followups;
+      if (m === 'none') st.noFollowups = true;
+    }
+    return render();
+  }
   if (card && e.target.dataset.f === 'fu-forever') return render(); // greys out the "repeat" number when ticked
   if (!card || e.target.dataset.f !== 'kind') return;
   const b = data.steps[card.dataset.id].buttons[e.target.dataset.i];
@@ -274,7 +316,7 @@ $('#steps').addEventListener('click', (e) => {
   dirty = true;
   const card = e.target.closest('.card');
   const id = card.dataset.id;
-  const step = data.steps[id];
+  const step = owner(id);
   if (act === 'addfu') {
     step.followups = step.followups || [];
     step.followups.push({ after: 1, unit: 'hours', repeat: 0, text: 'Hey {name} 👋 just a reminder, tap below to continue.' });
