@@ -45,14 +45,14 @@
     <input id="search" type="search" placeholder="🔍 Search customers by name, ID or bot username...">
     <div class="actions">
       <button class="primary" id="addBtn">+ Add customer</button>
-      <button id="backupBtn">⬇ Backup</button>
+      <button id="backupBtn">⬇ Backup all</button>
       <button id="restoreBtn">⬆ Restore</button>
       <input type="file" id="restoreFile" accept=".json,application/json" style="display:none">
     </div>
   </div>
 </div>
 <main>
-  <div class="card warn" id="warnBox">⚠️ On free hosting, saved data can reset when the app restarts. Tap <b>Backup</b> after adding customers or big changes, and <b>Restore</b> if anything disappears.</div>
+  <div class="card warn" id="warnBox">⚠️ On free hosting, saved data can reset when the app restarts. Tap <b>Backup all</b> (one file for everyone) or the <b>Backup</b> button on a customer (a file named after them) after big changes. Tap <b>Restore</b> and pick a file if anything disappears.</div>
 
   <div class="card" id="addForm" style="display:none">
     <b>Add a customer</b>
@@ -126,6 +126,7 @@ function render() {
         </div>
         <div class="actions">
           <button class="primary" data-act="open">Open</button>
+          <button data-act="backup">⬇ Backup</button>
           ${t.isMain ? '' : '<button data-act="more">⋯</button>'}
         </div>
       </div>
@@ -182,6 +183,10 @@ $('#list').addEventListener('click', async (e) => {
       location.href = '/c/' + id + '/';
       return;
     }
+    if (act === 'backup') {
+      location.href = '/api/export?id=' + encodeURIComponent(id); // downloads a file named after this customer
+      return;
+    }
     if (act === 'more') { openRow = openRow === id ? null : id; return render(); }
     if (act === 'rename') {
       const name = prompt('New name for this customer:', t.name);
@@ -216,7 +221,10 @@ $('#restoreFile').onchange = async (e) => {
   try {
     const text = await file.text();
     const parsed = JSON.parse(text);
-    if (!confirm('Restore from "' + file.name + '"?\nCustomers in the file are added, and ones with the same ID are overwritten.')) return;
+    const names = (Array.isArray(parsed.tenants) ? parsed.tenants : []).map((t) => t.name);
+    if (parsed.data && parsed.data.main) names.push('Main bot');
+    const what = names.length ? names.slice(0, 5).join(', ') + (names.length > 5 ? ' and ' + (names.length - 5) + ' more' : '') : 'nothing I recognise';
+    if (!confirm('Restore from "' + file.name + '"?\n\nThis file contains: ' + what + '.\nA customer with the same ID is overwritten with the file\'s version.')) return;
     const out = await api('/api/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: text });
     toast(`Restored ${out.customers} customer${out.customers === 1 ? '' : 's'}`);
     await load();
