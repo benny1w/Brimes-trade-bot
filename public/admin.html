@@ -44,12 +44,14 @@
 <body>
 <header>
   <h1><a id="back" href="/" style="display:none;color:var(--accent);text-decoration:none;font-weight:400">← Customers</a> <span id="who">🤖 Bot Admin</span> <span class="muted" id="stats"></span></h1>
+  <button id="peopleBtn">👥 People</button>
   <button id="addStep">+ New step</button>
   <button class="primary" id="save">Save changes</button>
 </header>
 <main>
   <p class="muted" id="navhint" style="display:none"></p>
   <p class="muted">Every step is one message the bot sends. Buttons either go to another step or open a link. Changes go live as soon as you save, no restart needed.</p>
+  <div class="card" id="people" style="display:none"></div>
   <div id="steps"></div>
 </main>
 <div id="toast"></div>
@@ -76,6 +78,20 @@ async function load() {
   $('#stats').textContent = `· ${s.users} user${s.users === 1 ? '' : 's'} · ${s.pending || 0} reminder${s.pending === 1 ? '' : 's'} waiting`;
   render();
 }
+
+$('#peopleBtn').onclick = async () => {
+  const box = $('#people');
+  if (box.style.display === 'block') { box.style.display = 'none'; return; }
+  box.style.display = 'block';
+  box.textContent = 'Loading...';
+  try {
+    const out = await (await fetch('api/users')).json();
+    const rows = out.users.map((u) => `<tr><td>${esc(u.first_name || '-')}</td><td>${u.username ? '@' + esc(u.username) : '-'}</td><td><code>${esc(u.id)}</code></td><td>${u.via === 'channel' ? 'joined channel' : 'messaged bot'}</td><td>${esc((u.last_seen || '').slice(0, 10))}</td></tr>`).join('');
+    box.innerHTML = `<b>People who reached this bot (${out.users.length})</b>
+      <div class="hint">The bot knows each person's ID the moment they message it or ask to join your channel, so it can message them any time (unless they block it).</div>
+      <div style="overflow-x:auto"><table style="width:100%;font-size:13px;border-collapse:collapse"><tr class="muted"><td>Name</td><td>Username</td><td>ID</td><td>How</td><td>Last seen</td></tr>${rows}</table></div>`;
+  } catch (e) { box.textContent = 'Could not load the list.'; }
+};
 
 function stepOptions(selected) {
   const items = Object.entries(data.steps)
@@ -165,8 +181,9 @@ function render() {
           <button class="danger" data-act="delbtn" data-i="${i}">✕</button>
         </div>` + (isLink
           ? `<div class="then-row">
-          <span class="muted">↳ After they tap this link, also send:</span>
+          <span class="muted">↳ Then send this next step by itself:</span>
           <select data-f="then" data-i="${i}">${thenOptions(b.then)}</select>
+          ${b.then ? `<span class="muted">after <input class="num" type="number" min="0.1" max="1440" step="any" data-f="thenAfter" data-i="${i}" value="${esc(b.thenAfter || 1)}"> minute(s). The button opens exactly your link, nothing added.</span>` : ''}
         </div>`
           : '');
       })
@@ -219,6 +236,7 @@ $('#steps').addEventListener('input', (e) => {
     if (f === 'label') b.label = e.target.value;
     if (f === 'url') b.url = e.target.value;
     if (f === 'goto' && e.target.value !== '__new__') b.goto = e.target.value;
+    if (f === 'thenAfter') b.thenAfter = Number(e.target.value) || 1;
     if (f === 'then' && e.target.value !== '__new__') {
       if (e.target.value) b.then = e.target.value;
       else delete b.then;
