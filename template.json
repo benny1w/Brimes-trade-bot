@@ -1,0 +1,10 @@
+{
+  "start": "welcome",
+  "steps": {
+    "welcome": {
+      "text": "Welcome, <b>{name}</b>! 👋\n\nThis is your new bot. Open your admin page to change this message and add buttons.",
+      "image": "",
+      "buttons": []
+    }
+  }
+}
