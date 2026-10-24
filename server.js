@@ -32,7 +32,8 @@ const MASTER_HTML = fs.readFileSync(path.join(__dirname, 'public', 'master.html'
 // ---------- small helpers ----------
 
 function send(res, status, body, type = 'application/json', headers = {}) {
-  res.writeHead(status, { 'Content-Type': type, ...headers });
+  // Pages are never kept by the browser, so a new upload shows up straight away
+  res.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store', ...headers });
   res.end(typeof body === 'string' ? body : JSON.stringify(body));
 }
 
