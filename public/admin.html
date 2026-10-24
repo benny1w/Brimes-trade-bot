@@ -45,6 +45,7 @@
 <header>
   <h1><a id="back" href="/" style="display:none;color:var(--accent);text-decoration:none;font-weight:400">← Customers</a> <span id="who">🤖 Bot Admin</span> <span class="muted" id="stats"></span></h1>
   <button id="peopleBtn">👥 People</button>
+  <button id="channelBtn">📣 Channel</button>
   <button id="addStep">+ New step</button>
   <button class="primary" id="save">Save changes</button>
 </header>
@@ -52,6 +53,7 @@
   <p class="muted" id="navhint" style="display:none"></p>
   <p class="muted">Every step is one message the bot sends. Buttons either go to another step or open a link. Changes go live as soon as you save, no restart needed.</p>
   <div class="card" id="people" style="display:none"></div>
+  <div class="card" id="channel" style="display:none"></div>
   <div id="steps"></div>
 </main>
 <div id="toast"></div>
@@ -80,6 +82,36 @@ async function load() {
   render();
 }
 
+async function loadChannel(msg, isErr) {
+  const box = $('#channel');
+  let c = { channelId: '', posts: 0 };
+  try { c = await (await fetch('api/channel')).json(); } catch (e) {}
+  box.innerHTML = `<b>📣 Channel for reminder messages</b>
+    <div class="hint">The customer makes a Telegram channel and adds their bot to it as an <b>admin</b>. They write their reminder messages as posts there (text, pictures, videos). Paste the channel ID below. Then add a follow-up (on a step, or in "Reminders for all steps") and set the time: the message is taken from this channel.</div>
+    <div class="hint">Channel ID looks like <code>-1001234567890</code> (or <code>@channelname</code> if it is public). The bot only sees posts made after it joined. To add an older post, the customer can just edit it once.</div>
+    <input id="chId" placeholder="-1001234567890" value="${esc(c.channelId || '')}" style="margin-top:8px">
+    <div style="margin-top:8px"><button class="primary" id="chSave">Save and check</button></div>
+    <div class="hint" id="chMsg" style="${isErr ? 'color:#ff8a8a' : ''}">${msg ? esc(msg) : (c.channelId ? `Saved. The bot has collected ${c.posts} post${c.posts === 1 ? '' : 's'} from this channel so far.` : 'No channel set.')}</div>`;
+  $('#chSave').onclick = async () => {
+    $('#chMsg').textContent = 'Checking with Telegram...';
+    try {
+      const r = await fetch('api/channel', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ channelId: $('#chId').value }) });
+      const out = await r.json();
+      if (!r.ok) return loadChannel(out.error || 'Could not save', true);
+      if (!out.channelId) return loadChannel('Channel removed.');
+      loadChannel(out.isAdmin
+        ? `✓ Connected to "${out.title}". The bot is an admin there, so it will collect new posts. Collected so far: ${out.posts}.`
+        : `Saved "${out.title}", BUT the bot is not an admin of that channel yet. Make it an admin, otherwise it cannot see the posts.`, !out.isAdmin);
+    } catch (e) { loadChannel('Could not reach the server.', true); }
+  };
+}
+$('#channelBtn').onclick = () => {
+  const box = $('#channel');
+  if (box.style.display === 'block') { box.style.display = 'none'; return; }
+  box.style.display = 'block';
+  loadChannel();
+};
+
 $('#peopleBtn').onclick = async () => {
   const box = $('#people');
   if (box.style.display === 'block') { box.style.display = 'none'; return; }
@@ -104,12 +136,8 @@ function stepOptions(selected) {
   return items + '<option value="__new__">➕ Create new step...</option>';
 }
 
-function followupRows(list, randomOn) {
-  const rows = (list || [])
-    .map(
-      (f, j) => `
-    <div class="fu">
-      <div class="fu-top">
+function timingRows(f, j) {
+  return `<div class="fu-top">
         <span class="muted">Send after</span>
         <input class="num" type="number" min="0" step="any" data-f="fu-after" data-j="${j}" value="${esc(f.after)}">
         <span class="muted">to</span>
@@ -124,7 +152,21 @@ function followupRows(list, randomOn) {
         <input class="num" type="number" min="0" max="20" step="1" data-f="fu-repeat" data-j="${j}" value="${esc(f.repeat || 0)}" ${f.forever ? 'disabled' : ''}>
         <span class="muted">more times</span>
         <label class="chk"><input type="checkbox" data-f="fu-forever" data-j="${j}" ${f.forever ? 'checked' : ''}> keep repeating until they continue</label>
-      </div>
+      </div>`;
+}
+
+function followupRows(list, randomOn) {
+  const typed = (list || []).filter((f) => !f.channel).length;
+  const rows = (list || [])
+    .map((f, j) => {
+      if (f.channel) {
+        // The normal case: only the timing. The message is a random post from the customer's channel.
+        return `<div class="fu">${timingRows(f, j)}
+      <div class="hint">📣 The message is a random post from the customer's channel (set it with the 📣 Channel button at the top).</div></div>`;
+      }
+      // Older follow-up with a typed message: still works, and can be switched to the channel
+      return `<div class="fu">${timingRows(f, j)}
+      <label class="chk"><input type="checkbox" data-f="fu-channel" data-j="${j}"> 📣 Use the customer's channel instead of this typed message</label>
       <textarea data-f="fu-text" data-j="${j}" placeholder="Follow-up message...">${esc(f.text)}</textarea>
       ${(f.buttons || []).map((b, bi) => `<div class="btn-row">
         <input data-f="fu-bl" data-j="${j}" data-b="${bi}" placeholder="Button text" value="${esc(b.label)}">
@@ -140,27 +182,19 @@ function followupRows(list, randomOn) {
       <button data-act="addfbtn" data-j="${j}">${(f.buttons || []).length ? '+ Add another button' : '+ Add its own button (otherwise the step\'s buttons are used)'}</button>
       <input data-f="fu-image" data-j="${j}" placeholder="Picture link (optional) https://..." value="${esc(f.image || '')}">
       <input data-f="fu-video" data-j="${j}" placeholder="Video link (optional) https://... .mp4" value="${esc(f.video || '')}">
-      ${(f.variants || [])
-        .map(
-          (v, vi) => `<div class="var">
-        <textarea data-f="fu-var" data-j="${j}" data-v="${vi}" placeholder="Another version of this message...">${esc(v)}</textarea>
-        <button class="danger" data-act="delvar" data-j="${j}" data-v="${vi}">✕</button>
-      </div>`
-        )
-        .join('')}
-    </div>`
-    )
+    </div>`;
+    })
     .join('');
-  const random = (list || []).length > 1
+  const random = typed > 1
     ? `<label class="chk" style="margin:8px 0"><input type="checkbox" data-f="fu-random" ${randomOn ? 'checked' : ''}> 🎲 Pick ONE of these at random each time (instead of sending all of them). The time settings of the first one are used.</label>`
     : '';
   return random + rows + '<button data-act="addfu">+ Add follow-up</button>';
 }
 
-const FU_HELP = `<div class="hint"><b>Send after</b>: fill only the first time for a fixed wait, or fill "to" as well for a random wait between the two (e.g. 1 to 3 hours).<br>
+const FU_HELP = `<div class="hint">Here you only set <b>when</b>. The message itself is a random post from the customer's channel.<br>
+  <b>Send after</b>: fill only the first box for a fixed wait, or fill "to" as well for a random wait between the two (e.g. 1 to 3 hours).<br>
   <b>Repeat</b>: sends again after the same kind of wait. Tick "keep repeating" to go on until they continue (at least 5 minutes between messages).<br>
-  <b>Picture / video</b>: paste a link (a direct .mp4 link for video). It is sent with the message. If both are filled, only the video is sent.<br>
-  <b>Several follow-ups</b>: tick "Pick ONE at random" and the bot picks a different one each time, never the same twice in a row. Each can have its own picture or video.</div>`;
+  <b>More than one follow-up</b>: each one has its own timing (for example one after 1 hour, another after 1 day).</div>`;
 
 // One place for reminders that apply to EVERY step (unless a step says otherwise)
 function generalHtml() {
@@ -314,7 +348,7 @@ $('#steps').addEventListener('change', (e) => {
     const st = data.steps[card.dataset.id];
     const m = e.target.value;
     delete st.noFollowups;
-    if (m === 'custom') st.followups = [{ after: 1, unit: 'hours', repeat: 0, text: 'Hey {name} 👋 just a reminder, tap below to continue.' }];
+    if (m === 'custom') st.followups = [{ after: 1, unit: 'hours', repeat: 0, channel: true, text: '' }];
     else {
       delete st.followups;
       if (m === 'none') st.noFollowups = true;
@@ -325,6 +359,12 @@ $('#steps').addEventListener('change', (e) => {
     const fb = owner(card.dataset.id).followups[+e.target.dataset.j].buttons[+e.target.dataset.b];
     if (e.target.value === 'url') { delete fb.goto; fb.url = 'https://'; }
     else { delete fb.url; fb.goto = data.start; }
+    return render();
+  }
+  if (card && e.target.dataset.f === 'fu-channel') {
+    const fu = owner(card.dataset.id).followups[+e.target.dataset.j];
+    if (e.target.checked) fu.channel = true;
+    else delete fu.channel;
     return render();
   }
   if (card && e.target.dataset.f === 'fu-forever') return render(); // greys out the "repeat" number when ticked
@@ -344,8 +384,7 @@ $('#steps').addEventListener('click', (e) => {
   const step = owner(id);
   if (act === 'addfu') {
     step.followups = step.followups || [];
-    step.followups.push({ after: 1, unit: 'hours', repeat: 0, text: 'Hey {name} 👋 just a reminder, tap below to continue.' });
-    if (step.followups.length === 2) step.followupsRandom = true; // two or more messages: random by default (you can untick it)
+    step.followups.push({ after: 1, unit: 'hours', repeat: 0, channel: true, text: '' });
   } else if (act === 'delfu') {
     step.followups.splice(+e.target.dataset.j, 1);
   } else if (act === 'addfbtn') {
