@@ -55,7 +55,7 @@
   <div class="card" id="people" style="display:none"></div>
   <div class="card" id="channel" style="display:none"></div>
   <div id="steps"></div>
-  <p class="muted" style="text-align:center;margin:30px 0 60px">Page version: v3 (channel + follow-up buttons)</p>
+  <p class="muted" style="text-align:center;margin:30px 0 60px">Page version: v4 (channel + follow-up buttons + next step)</p>
 </main>
 <div id="toast"></div>
 
@@ -167,7 +167,11 @@ function fuButtonsHtml(f, j) {
       ? `<input data-f="fu-bu" data-j="${j}" data-b="${bi}" placeholder="https://..." value="${esc(b.url)}">`
       : `<select data-f="fu-bg" data-j="${j}" data-b="${bi}">${Object.entries(data.steps).map(([sid, st]) => `<option value="${esc(sid)}" ${sid === b.goto ? 'selected' : ''}>${esc(sid)} — ${esc(st.text.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim().slice(0, 28))}</option>`).join('')}</select>`}
     <button class="danger" data-act="delfbtn" data-j="${j}" data-b="${bi}">✕</button>
-  </div>`).join('')}
+  </div>${b.url ? `<div class="then-row">
+    <span class="muted">↳ Then send this next step by itself:</span>
+    <select data-f="fu-bthen" data-j="${j}" data-b="${bi}"><option value="" ${!b.then ? 'selected' : ''}>Nothing (just open the link)</option>${Object.entries(data.steps).map(([sid, st]) => `<option value="${esc(sid)}" ${sid === b.then ? 'selected' : ''}>${esc(sid)} — ${esc(st.text.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim().slice(0, 28))}</option>`).join('')}</select>
+    ${b.then ? `<span class="muted">after <input class="num" type="number" min="0.1" max="1440" step="any" data-f="fu-bthenAfter" data-j="${j}" data-b="${bi}" value="${esc(b.thenAfter || 1)}"> minute(s)</span>` : ''}
+  </div>` : ''}`).join('')}
   <button data-act="addfbtn" data-j="${j}">${(f.buttons || []).length ? '+ Add another button' : '+ Add its own button (otherwise the step\'s buttons are used)'}</button>`;
 }
 
@@ -317,6 +321,7 @@ $('#steps').addEventListener('input', (e) => {
     if (f === 'fu-bl') fu.buttons[+e.target.dataset.b].label = e.target.value;
     if (f === 'fu-bu') fu.buttons[+e.target.dataset.b].url = e.target.value;
     if (f === 'fu-bg') fu.buttons[+e.target.dataset.b].goto = e.target.value;
+    if (f === 'fu-bthenAfter') fu.buttons[+e.target.dataset.b].thenAfter = Number(e.target.value) || 1;
     if (f === 'fu-image' || f === 'fu-video') {
       if (e.target.value.trim()) fu[f.slice(3)] = e.target.value;
       else delete fu[f.slice(3)];
@@ -361,10 +366,16 @@ $('#steps').addEventListener('change', (e) => {
     }
     return render();
   }
+  if (card && e.target.dataset.f === 'fu-bthen') {
+    const fb = owner(card.dataset.id).followups[+e.target.dataset.j].buttons[+e.target.dataset.b];
+    if (e.target.value) fb.then = e.target.value;
+    else { delete fb.then; delete fb.thenAfter; }
+    return render();
+  }
   if (card && e.target.dataset.f === 'fu-bkind') {
     const fb = owner(card.dataset.id).followups[+e.target.dataset.j].buttons[+e.target.dataset.b];
     if (e.target.value === 'url') { delete fb.goto; fb.url = 'https://'; }
-    else { delete fb.url; fb.goto = data.start; }
+    else { delete fb.url; delete fb.then; delete fb.thenAfter; fb.goto = data.start; }
     return render();
   }
   if (card && e.target.dataset.f === 'fu-channel') {
@@ -426,7 +437,7 @@ $('#steps').addEventListener('click', (e) => {
     Object.values(data.steps).forEach((s) => (s.buttons || []).forEach((b) => { if (b.then === id) delete b.then; }));
     Object.values(data.steps).forEach((s) => { s.buttons = (s.buttons || []).filter((b) => b.goto !== id); });
     // reminder buttons that pointed to this step go too
-    [data, ...Object.values(data.steps)].forEach((o) => (o.followups || []).forEach((fu) => { if (fu.buttons) fu.buttons = fu.buttons.filter((x) => x.goto !== id); }));
+    [data, ...Object.values(data.steps)].forEach((o) => (o.followups || []).forEach((fu) => { if (fu.buttons) { fu.buttons = fu.buttons.filter((x) => x.goto !== id); fu.buttons.forEach((x) => { if (x.then === id) delete x.then; }); } }));
     if (id === data.start) data.start = Object.keys(data.steps)[0];
     toast('Deleted. Tap "Save changes" to make it live.');
   }
