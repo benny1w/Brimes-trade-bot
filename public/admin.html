@@ -55,6 +55,7 @@
   <div class="card" id="people" style="display:none"></div>
   <div class="card" id="channel" style="display:none"></div>
   <div id="steps"></div>
+  <p class="muted" style="text-align:center;margin:30px 0 60px">Page version: v3 (channel + follow-up buttons)</p>
 </main>
 <div id="toast"></div>
 
@@ -155,6 +156,21 @@ function timingRows(f, j) {
       </div>`;
 }
 
+function fuButtonsHtml(f, j) {
+  return `${(f.buttons || []).map((b, bi) => `<div class="btn-row">
+    <input data-f="fu-bl" data-j="${j}" data-b="${bi}" placeholder="Button text" value="${esc(b.label)}">
+    <select data-f="fu-bkind" data-j="${j}" data-b="${bi}">
+      <option value="goto" ${!b.url ? 'selected' : ''}>Go to step</option>
+      <option value="url" ${b.url ? 'selected' : ''}>Open link</option>
+    </select>
+    ${b.url
+      ? `<input data-f="fu-bu" data-j="${j}" data-b="${bi}" placeholder="https://..." value="${esc(b.url)}">`
+      : `<select data-f="fu-bg" data-j="${j}" data-b="${bi}">${Object.entries(data.steps).map(([sid, st]) => `<option value="${esc(sid)}" ${sid === b.goto ? 'selected' : ''}>${esc(sid)} — ${esc(st.text.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim().slice(0, 28))}</option>`).join('')}</select>`}
+    <button class="danger" data-act="delfbtn" data-j="${j}" data-b="${bi}">✕</button>
+  </div>`).join('')}
+  <button data-act="addfbtn" data-j="${j}">${(f.buttons || []).length ? '+ Add another button' : '+ Add its own button (otherwise the step\'s buttons are used)'}</button>`;
+}
+
 function followupRows(list, randomOn) {
   const typed = (list || []).filter((f) => !f.channel).length;
   const rows = (list || [])
@@ -162,24 +178,14 @@ function followupRows(list, randomOn) {
       if (f.channel) {
         // The normal case: only the timing. The message is a random post from the customer's channel.
         return `<div class="fu">${timingRows(f, j)}
-      <div class="hint">📣 The message is a random post from the customer's channel (set it with the 📣 Channel button at the top).</div></div>`;
+      <div class="hint">📣 The message is a random post from the customer's channel (set it with the 📣 Channel button at the top). The bot puts these buttons under it:</div>
+      ${fuButtonsHtml(f, j)}</div>`;
       }
       // Older follow-up with a typed message: still works, and can be switched to the channel
       return `<div class="fu">${timingRows(f, j)}
       <label class="chk"><input type="checkbox" data-f="fu-channel" data-j="${j}"> 📣 Use the customer's channel instead of this typed message</label>
       <textarea data-f="fu-text" data-j="${j}" placeholder="Follow-up message...">${esc(f.text)}</textarea>
-      ${(f.buttons || []).map((b, bi) => `<div class="btn-row">
-        <input data-f="fu-bl" data-j="${j}" data-b="${bi}" placeholder="Button text" value="${esc(b.label)}">
-        <select data-f="fu-bkind" data-j="${j}" data-b="${bi}">
-          <option value="goto" ${!b.url ? 'selected' : ''}>Go to step</option>
-          <option value="url" ${b.url ? 'selected' : ''}>Open link</option>
-        </select>
-        ${b.url
-          ? `<input data-f="fu-bu" data-j="${j}" data-b="${bi}" placeholder="https://..." value="${esc(b.url)}">`
-          : `<select data-f="fu-bg" data-j="${j}" data-b="${bi}">${Object.entries(data.steps).map(([sid, st]) => `<option value="${esc(sid)}" ${sid === b.goto ? 'selected' : ''}>${esc(sid)} — ${esc(st.text.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim().slice(0, 28))}</option>`).join('')}</select>`}
-        <button class="danger" data-act="delfbtn" data-j="${j}" data-b="${bi}">✕</button>
-      </div>`).join('')}
-      <button data-act="addfbtn" data-j="${j}">${(f.buttons || []).length ? '+ Add another button' : '+ Add its own button (otherwise the step\'s buttons are used)'}</button>
+      ${fuButtonsHtml(f, j)}
       <input data-f="fu-image" data-j="${j}" placeholder="Picture link (optional) https://..." value="${esc(f.image || '')}">
       <input data-f="fu-video" data-j="${j}" placeholder="Video link (optional) https://... .mp4" value="${esc(f.video || '')}">
     </div>`;
