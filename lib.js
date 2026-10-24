@@ -57,6 +57,7 @@ function checkFollowupList(list, where, data) {
           if (!b || typeof b.label !== 'string' || !b.label.trim()) return `A button in a follow-up in ${where} has no label.`;
           if (b.url) {
             if (!/^https?:\/\//i.test(b.url)) return `Button "${b.label}" in a follow-up in ${where}: link must start with http:// or https://`;
+            if (b.then && !(data && data.steps && data.steps[b.then])) return `Button "${b.label}" in a follow-up in ${where} has a "then send" step that doesn't exist.`;
           } else if (!b.goto || !(data && data.steps && data.steps[b.goto])) {
             return `Button "${b.label}" in a follow-up in ${where} points to a step that doesn't exist.`;
           }
@@ -124,7 +125,16 @@ function cleanFollowupList(list) {
     if (f.forever) out.forever = true;
     if (f.image && String(f.image).trim()) out.image = String(f.image).trim();
     if (f.video && String(f.video).trim()) out.video = String(f.video).trim();
-    const btns = (f.buttons || []).map((b) => (b.url ? { label: b.label, url: b.url } : { label: b.label, goto: b.goto }));
+    const btns = (f.buttons || []).map((b) => {
+      if (!b.url) return { label: b.label, goto: b.goto };
+      const o = { label: b.label, url: b.url };
+      if (b.then) {
+        o.then = b.then;
+        const m = Number(b.thenAfter);
+        o.thenAfter = m > 0 && m <= 1440 ? m : 1; // minutes after the reminder before the next step is sent
+      }
+      return o;
+    });
     if (btns.length) out.buttons = btns; // this follow-up's own buttons (otherwise the step's buttons are used)
     return out;
   });

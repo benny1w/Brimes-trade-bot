@@ -184,7 +184,9 @@ function createBot({ tenant, store, publicBase, webhookSecret }) {
   // Sends one follow-up (picking one of its versions at random, never the same as last time).
   // Returns { result: 'sent' | 'gone' | 'drop', idx }: 'gone' = the person blocked the bot or the chat is missing,
   // 'drop' = it can't be sent. Network problems and Telegram overload throw, so it is tried again on the next check.
+  let usedFu = null; // the follow-up (or the picked one) that was just sent
   async function sendFollowup(chatId, stepId, fi, name, avoid, prevIds, avoidPost) {
+    usedFu = null;
     const all = store.loadSteps();
     const step = all.steps[stepId];
     const list = step ? followupsFor(all, stepId) : [];
@@ -201,6 +203,7 @@ function createBot({ tenant, store, publicBase, webhookSecret }) {
     } else {
       idx = pickVariant(fu, avoid);
     }
+    usedFu = fu;
     // Take the previous reminder out of their chat first, so reminders don't pile up (Telegram allows this for 48 hours)
     for (const mid of prevIds || []) {
       try {
@@ -351,6 +354,15 @@ function createBot({ tenant, store, publicBase, webhookSecret }) {
             plan.items.forEach((i) => {
               if (i.due <= t) i.due = t + 30 * 60 * 1000;
             });
+            // Link buttons on this reminder with "then send this step": that step follows by itself after the wait
+            if (out.result === 'sent' && usedFu && usedFu.buttons) {
+              usedFu.buttons.forEach((btn, bi) => {
+                if (!btn.url || !btn.then) return;
+                const key = -(1000 + job.item.fi * 20 + bi);
+                plan.items = plan.items.filter((i) => !(i.fi === key && i.k === 0));
+                plan.items.push({ due: Date.now() + (Number(btn.thenAfter) > 0 ? Number(btn.thenAfter) : 1) * 60 * 1000, step: btn.then, fi: key, k: 0 });
+              });
+            }
             if (!plan.items.length) delete fresh[job.chatId];
           }
           store.saveSchedule(fresh);
