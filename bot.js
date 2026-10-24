@@ -168,9 +168,20 @@ function createBot({ tenant, store, publicBase, webhookSecret }) {
   async function sendFollowup(chatId, stepId, fi, name, avoid, prevIds) {
     const all = store.loadSteps();
     const step = all.steps[stepId];
-    const fu = step && followupsFor(all, stepId)[fi];
-    if (!fu) return { result: 'drop' }; // step or follow-up was deleted in the admin
-    const idx = pickVariant(fu, avoid);
+    const list = step ? followupsFor(all, stepId) : [];
+    const base = list[fi];
+    if (!base) return { result: 'drop' }; // step or follow-up was deleted in the admin
+    const randomMode = list.random && list.length > 1;
+    let fu = base;
+    let idx;
+    if (randomMode) {
+      // The follow-ups are alternatives: pick one at random, never the same as last time
+      idx = Math.floor(Math.random() * list.length);
+      if (idx === avoid) idx = (idx + 1 + Math.floor(Math.random() * (list.length - 1))) % list.length;
+      fu = list[idx];
+    } else {
+      idx = pickVariant(fu, avoid);
+    }
     // Take the previous reminder out of their chat first, so reminders don't pile up (Telegram allows this for 48 hours)
     for (const mid of prevIds || []) {
       try {
@@ -182,8 +193,11 @@ function createBot({ tenant, store, publicBase, webhookSecret }) {
     }
     const ids = [];
     const keep = (r) => { if (r && r.message_id) ids.push(r.message_id); };
-    const text = fillPlaceholders(followupTexts(fu)[idx], { first_name: name });
-    const reply_markup = keyboardFor(step, stepId, chatId); // same buttons as the step, so they can continue
+    const text = fillPlaceholders(followupTexts(fu)[randomMode ? pickVariant(fu) : idx], { first_name: name });
+    // The follow-up's own buttons if it has any, otherwise the same buttons as the step so they can continue
+    const reply_markup = fu.buttons && fu.buttons.length
+      ? { inline_keyboard: fu.buttons.map((x) => [x.url ? { text: x.label, url: x.url } : { text: x.label, callback_data: x.goto }]) }
+      : keyboardFor(step, stepId, chatId);
     const isGone = (e) => /forbidden|chat not found|deactivated|blocked/i.test(e.description || '');
     const retryLater = (e) => !e.description || e.code === 429 || e.code >= 500;
     // Optional video or picture: sent together with the message when it fits in a caption, otherwise just before it

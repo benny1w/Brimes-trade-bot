@@ -33,7 +33,7 @@ function pickVariant(f, avoid) {
 
 // ---------- Steps: validation and cleaning ----------
 
-function checkFollowupList(list, where) {
+function checkFollowupList(list, where, data) {
   const fus = list || [];
   if (!Array.isArray(fus)) return `Invalid follow-ups in ${where}.`;
   if (fus.length > 10) return `Too many follow-ups in ${where} (max 10).`;
@@ -47,6 +47,17 @@ function checkFollowupList(list, where) {
       if (f.afterMax !== undefined && f.afterMax !== '' && f.afterMax !== null) {
         if (!(Number(f.afterMax) > 0)) return `A follow-up in ${where}: the second ("to") time must be greater than 0.`;
         if (Number(f.afterMax) < Number(f.after)) return `A follow-up in ${where}: the second ("to") time must be bigger than the first, or leave it empty.`;
+      }
+      if (f.buttons !== undefined) {
+        if (!Array.isArray(f.buttons) || f.buttons.length > 10) return `A follow-up in ${where} can have at most 10 buttons.`;
+        for (const b of f.buttons) {
+          if (!b || typeof b.label !== 'string' || !b.label.trim()) return `A button in a follow-up in ${where} has no label.`;
+          if (b.url) {
+            if (!/^https?:\/\//i.test(b.url)) return `Button "${b.label}" in a follow-up in ${where}: link must start with http:// or https://`;
+          } else if (!b.goto || !(data && data.steps && data.steps[b.goto])) {
+            return `Button "${b.label}" in a follow-up in ${where} points to a step that doesn't exist.`;
+          }
+        }
       }
       for (const k of ['image', 'video']) {
         if (f[k] && !/^https?:\/\//i.test(String(f[k]).trim())) return `A follow-up in ${where}: the ${k} link must start with http:// or https://`;
@@ -92,10 +103,10 @@ function validateSteps(data) {
         return `Button "${b.label}" in "${id}" points to a step that doesn't exist.`;
       }
     }
-    const e1 = checkFollowupList(step.followups, `"${id}"`);
+    const e1 = checkFollowupList(step.followups, `"${id}"`, data);
     if (e1) return e1;
   }
-  const e2 = checkFollowupList(data.followups, 'the general follow-ups');
+  const e2 = checkFollowupList(data.followups, 'the general follow-ups', data);
   if (e2) return e2;
   return null;
 }
@@ -109,17 +120,22 @@ function cleanFollowupList(list) {
     if (f.forever) out.forever = true;
     if (f.image && String(f.image).trim()) out.image = String(f.image).trim();
     if (f.video && String(f.video).trim()) out.video = String(f.video).trim();
+    const btns = (f.buttons || []).map((b) => (b.url ? { label: b.label, url: b.url } : { label: b.label, goto: b.goto }));
+    if (btns.length) out.buttons = btns; // this follow-up's own buttons (otherwise the step's buttons are used)
     return out;
   });
 }
 
 // Which reminders apply to a step: its own, or none, or the general ones that apply to every step
+// The list has a `random` flag: when true, the follow-ups are alternatives (one is picked at random each time)
 function followupsFor(data, stepId) {
   const step = data && data.steps && data.steps[stepId];
   if (!step) return [];
-  if (step.followups && step.followups.length) return step.followups;
-  if (step.noFollowups) return [];
-  return data.followups || [];
+  let list, random;
+  if (step.followups && step.followups.length) { list = step.followups; random = step.followupsRandom; }
+  else if (step.noFollowups) { list = []; random = false; }
+  else { list = data.followups || []; random = data.followupsRandom; }
+  return Object.assign(list.slice(), { random: !!random });
 }
 
 // Keeps only known fields, so nothing unexpected gets saved.
@@ -141,11 +157,15 @@ function cleanSteps(data) {
       }),
     };
     const own = cleanFollowupList(s.followups);
-    if (own.length) clean.steps[id].followups = own;
+    if (own.length) {
+      clean.steps[id].followups = own;
+      if (s.followupsRandom && own.length > 1) clean.steps[id].followupsRandom = true;
+    }
     else if (s.noFollowups) clean.steps[id].noFollowups = true; // this step sends no reminders at all
   }
   const general = cleanFollowupList(data.followups);
   if (general.length) clean.followups = general;
+  if (general.length > 1 && data.followupsRandom) clean.followupsRandom = true;
   return clean;
 }
 
@@ -313,7 +333,8 @@ function createStore(dir, templateFile) {
     planFollowups(chatId, stepId, from) {
       const all = store.loadSteps();
       const step = all.steps[stepId];
-      const fus = followupsFor(all, stepId);
+      let fus = followupsFor(all, stepId);
+      if (fus.random && fus.length > 1) fus = [fus[0]]; // random mode: one schedule (the first one's timing), a random message each time
       const sched = store.loadSchedule();
       const now = Date.now();
       const items = [];
