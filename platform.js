@@ -260,6 +260,42 @@ class Platform {
     }
   }
 
+  // Checks the channel a customer's reminder messages come from, and saves it if Telegram can see it.
+  async setChannel(id, channelId) {
+    const t = this.getTenant(id);
+    if (!t) throw userError('Customer not found.');
+    const store = this.getStore(id);
+    channelId = String(channelId || '').trim();
+    if (!channelId) {
+      store.saveSettings({ channelId: '' });
+      return { channelId: '', title: '', isAdmin: false, posts: store.loadPool().length };
+    }
+    if (!/^-100\d{5,}$/.test(channelId) && !/^@[A-Za-z0-9_]{4,}$/.test(channelId)) {
+      throw userError('A channel ID looks like -1001234567890 (or @channelname for a public channel).');
+    }
+    const base = process.env.TELEGRAM_API_BASE || 'https://api.telegram.org';
+    const call = async (method, body) => {
+      let json;
+      try {
+        json = await (await fetch(`${base}/bot${t.token}/${method}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) })).json();
+      } catch {
+        throw userError('Could not reach Telegram. Try again in a moment.');
+      }
+      return json;
+    };
+    const chat = await call('getChat', { chat_id: channelId });
+    if (!chat.ok) throw userError('Telegram cannot find that channel for this bot. Add the bot to the channel as an admin first, then check the ID.');
+    const me = await call('getMe');
+    let isAdmin = false;
+    if (me.ok) {
+      const m = await call('getChatMember', { chat_id: channelId, user_id: me.result.id });
+      isAdmin = !!(m.ok && ['administrator', 'creator'].includes(m.result.status));
+    }
+    if (channelId !== String(store.loadSettings().channelId || '')) store.savePool([]); // a different channel: forget the old posts
+    store.saveSettings({ channelId });
+    return { channelId, title: chat.result.title || chat.result.username || '', isAdmin, posts: store.loadPool().length };
+  }
+
   // ----- backup and restore (important on free hosting, where files can reset) -----
 
   // Everything, or just one customer when onlyId is given
@@ -270,7 +306,7 @@ class Platform {
     for (const t of list) {
       const s = this.getStore(t.id);
       s.flush();
-      data[t.id] = { steps: s.loadSteps(), users: s.loadUsers(), schedule: s.loadSchedule() };
+      data[t.id] = { steps: s.loadSteps(), users: s.loadUsers(), schedule: s.loadSchedule(), settings: s.loadSettings(), pool: s.loadPool() };
     }
     return {
       version: 1,

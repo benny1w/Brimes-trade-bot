@@ -1,7 +1,7 @@
 const { fillPlaceholders, buildTrackedUrl, followupsFor, randomGap, followupTexts, pickVariant } = require('./lib');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const UPDATE_TYPES = ['message', 'callback_query', 'chat_join_request'];
+const UPDATE_TYPES = ['message', 'callback_query', 'chat_join_request', 'channel_post', 'edited_channel_post'];
 
 // Handle each person's updates one at a time and in order (different people still run in parallel).
 // Without this, two quick taps could finish out of order and leave the wrong reminders running.
@@ -132,6 +132,16 @@ function createBot({ tenant, store, publicBase, webhookSecret }) {
     await sendStep(req.user_chat_id || user.id, store.loadSteps().start, user);
   }
 
+  // A post in the customer's channel: remember its number so it can be used as a reminder message
+  function handleChannelPost(post) {
+    const ch = String(store.loadSettings().channelId || '').trim();
+    if (!ch || !post || !post.chat) return;
+    const same = String(post.chat.id) === ch || (post.chat.username && ('@' + post.chat.username).toLowerCase() === ch.toLowerCase());
+    if (!same) return;
+    const hasContent = ['text', 'caption', 'photo', 'video', 'animation', 'document', 'audio', 'voice', 'video_note', 'sticker'].some((k) => post[k] !== undefined);
+    if (hasContent) store.addPost(post.message_id);
+  }
+
   async function handleUpdate(update) {
     if (update.chat_join_request) {
       await handleJoinRequest(update.chat_join_request);
@@ -154,6 +164,15 @@ function createBot({ tenant, store, publicBase, webhookSecret }) {
 
   // Called for every update, from webhook or polling
   function receive(update) {
+    const cp = update.channel_post || update.edited_channel_post;
+    if (cp) {
+      try {
+        handleChannelPost(cp);
+      } catch (e) {
+        console.error(tag, 'channel post error:', e.message);
+      }
+      return;
+    }
     const chatId =
       (update.chat_join_request && (update.chat_join_request.user_chat_id || update.chat_join_request.from.id)) ||
       (update.message && update.message.chat.id) ||
@@ -165,7 +184,7 @@ function createBot({ tenant, store, publicBase, webhookSecret }) {
   // Sends one follow-up (picking one of its versions at random, never the same as last time).
   // Returns { result: 'sent' | 'gone' | 'drop', idx }: 'gone' = the person blocked the bot or the chat is missing,
   // 'drop' = it can't be sent. Network problems and Telegram overload throw, so it is tried again on the next check.
-  async function sendFollowup(chatId, stepId, fi, name, avoid, prevIds) {
+  async function sendFollowup(chatId, stepId, fi, name, avoid, prevIds, avoidPost) {
     const all = store.loadSteps();
     const step = all.steps[stepId];
     const list = step ? followupsFor(all, stepId) : [];
@@ -200,6 +219,45 @@ function createBot({ tenant, store, publicBase, webhookSecret }) {
       : keyboardFor(step, stepId, chatId);
     const isGone = (e) => /forbidden|chat not found|deactivated|blocked/i.test(e.description || '');
     const retryLater = (e) => !e.description || e.code === 429 || e.code >= 500;
+    // Message taken from the customer's channel: copy one of their posts (so text, pictures, videos and later edits all come along)
+    if (fu.channel) {
+      const channelId = String(store.loadSettings().channelId || '').trim();
+      const tried = new Set();
+      while (channelId) {
+        const choices = store.loadPool().filter((m) => !tried.has(m));
+        if (!choices.length) break;
+        const others = choices.filter((m) => m !== avoidPost);
+        const from = others.length ? others : choices; // never the same post twice in a row, if there is another
+        const pick = from[Math.floor(Math.random() * from.length)];
+        tried.add(pick);
+        try {
+          const r = await tg('copyMessage', { chat_id: chatId, from_chat_id: channelId, message_id: pick, reply_markup });
+          keep(r);
+          return { result: 'sent', idx, ids, post: pick };
+        } catch (e) {
+          if (retryLater(e)) throw e;
+          const d = e.description || '';
+          if (/message to copy not found|MESSAGE_ID_INVALID|can't be copied|message_id_invalid/i.test(d)) {
+            store.removePost(pick); // the customer deleted that post
+            continue;
+          }
+          if (/blocked by the user|user is deactivated|bot was kicked/i.test(d)) return { result: 'gone' };
+          if (/chat not found|not a member|not enough rights|forbidden/i.test(d)) {
+            // Is it the person, or is it the channel? Ask Telegram about the channel.
+            try {
+              await tg('getChat', { chat_id: channelId });
+              return { result: 'gone' };
+            } catch {
+              console.error(tag, 'Cannot read the channel any more. Is the bot still an admin there?', d);
+              return { result: 'skip' };
+            }
+          }
+          console.error(tag, 'Channel reminder dropped:', e.message);
+          return { result: 'drop' };
+        }
+      }
+      return { result: 'skip' }; // nothing in the channel yet
+    }
     // Optional video or picture: sent together with the message when it fits in a caption, otherwise just before it
     const media = fu.video ? ['sendVideo', 'video', fu.video] : fu.image ? ['sendPhoto', 'photo', fu.image] : null;
     if (media) {
@@ -244,7 +302,7 @@ function createBot({ tenant, store, publicBase, webhookSecret }) {
         const item = plan.items.filter((i) => i.due <= now).sort((a, b) => a.due - b.due)[0];
         if (item) {
           const avoid = plan.last ? plan.last[item.fi] : undefined;
-          jobs.push({ chatId, planId: plan.id, stepId: plan.stepId, name: plan.name, item, avoid, prevIds: plan.lastMsgs });
+          jobs.push({ chatId, planId: plan.id, stepId: plan.stepId, name: plan.name, item, avoid, prevIds: plan.lastMsgs, avoidPost: plan.lastPost ? plan.lastPost[item.fi] : undefined });
         }
       }
       for (const job of jobs) {
@@ -263,7 +321,7 @@ function createBot({ tenant, store, publicBase, webhookSecret }) {
           continue;
         }
         try {
-          out = await sendFollowup(Number(job.chatId), job.stepId, job.item.fi, job.name, job.avoid, job.prevIds);
+          out = await sendFollowup(Number(job.chatId), job.stepId, job.item.fi, job.name, job.avoid, job.prevIds, job.avoidPost);
         } catch (e) {
           console.error(tag, 'Follow-up will be retried:', e.message);
           continue;
@@ -278,10 +336,14 @@ function createBot({ tenant, store, publicBase, webhookSecret }) {
               plan.last = plan.last || {};
               plan.last[job.item.fi] = out.idx; // remember which version was used, so the next one differs
               plan.lastMsgs = out.ids; // so the next reminder can delete this one
+              if (out.post) {
+                plan.lastPost = plan.lastPost || {};
+                plan.lastPost[job.item.fi] = out.post; // channel post used, so the next one differs
+              }
             }
             // A "keep repeating" follow-up is scheduled again with a fresh random wait; anything else is finished
             const fu = followupsFor(store.loadSteps(), job.stepId)[job.item.fi];
-            const again = out.result === 'sent' && job.item.loop && fu && fu.forever;
+            const again = (out.result === 'sent' || out.result === 'skip') && job.item.loop && fu && fu.forever;
             plan.items = plan.items.filter((i) => !(i.fi === job.item.fi && i.k === job.item.k));
             if (again) plan.items.push({ due: Date.now() + randomGap(fu), fi: job.item.fi, k: job.item.k, loop: true });
             // If the bot was asleep and several reminders are overdue, spread them out instead of sending all at once

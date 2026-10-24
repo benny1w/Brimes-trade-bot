@@ -38,8 +38,11 @@ function checkFollowupList(list, where, data) {
   if (!Array.isArray(fus)) return `Invalid follow-ups in ${where}.`;
   if (fus.length > 10) return `Too many follow-ups in ${where} (max 10).`;
     for (const f of fus) {
-      if (!f || typeof f.text !== 'string' || !f.text.trim()) return `A follow-up in ${where} needs some message text.`;
-      if (f.text.length > 4000) return `A follow-up in ${where} is too long (max 4000 characters).`;
+      if (!f || typeof f !== 'object') return `A follow-up in ${where} is invalid.`;
+      if (f.channel) {
+        if (f.text !== undefined && typeof f.text !== 'string') return `A follow-up in ${where} has invalid text.`;
+      } else if (typeof f.text !== 'string' || !f.text.trim()) return `A follow-up in ${where} needs some message text.`;
+      if (String(f.text || '').length > 4000) return `A follow-up in ${where} is too long (max 4000 characters).`;
       if (!UNIT_MS[f.unit]) return `A follow-up in ${where} has an invalid time unit.`;
       if (!(Number(f.after) > 0)) return `A follow-up in ${where} needs a time greater than 0.`;
       const rep = Number(f.repeat || 0);
@@ -113,7 +116,8 @@ function validateSteps(data) {
 
 function cleanFollowupList(list) {
   return (list || []).map((f) => {
-    const out = { text: f.text, after: Number(f.after), unit: f.unit, repeat: Number(f.repeat || 0) };
+    const out = { text: f.text || '', after: Number(f.after), unit: f.unit, repeat: Number(f.repeat || 0) };
+    if (f.channel) out.channel = true; // the message is taken from the customer's Telegram channel
     if (Number(f.afterMax) > Number(f.after)) out.afterMax = Number(f.afterMax); // random wait between the two
     const variants = (f.variants || []).filter((v) => typeof v === 'string' && v.trim());
     if (variants.length) out.variants = variants;
@@ -233,7 +237,11 @@ function createStore(dir, templateFile) {
     steps: path.join(dir, 'steps.json'),
     users: path.join(dir, 'users.json'),
     schedule: path.join(dir, 'schedule.json'),
+    settings: path.join(dir, 'settings.json'),
+    pool: path.join(dir, 'pool.json'),
   };
+  let settings = null;
+  let pool = null;
   let steps = null;
   let users = null;
   let schedule = null;
@@ -324,6 +332,45 @@ function createStore(dir, templateFile) {
         .sort((a, b) => String(b.last_seen).localeCompare(String(a.last_seen)));
     },
 
+    // Settings that belong to this customer's bot (for now: the channel their reminder messages come from)
+    loadSettings() {
+      if (!settings) settings = readJson(files.settings, {});
+      return settings;
+    },
+
+    saveSettings(patch) {
+      settings = { ...store.loadSettings(), ...patch };
+      ensureDir();
+      writeJsonAtomic(files.settings, settings);
+    },
+
+    // Message numbers of the posts the bot has seen in the customer's channel
+    loadPool() {
+      if (!pool) {
+        const p = readJson(files.pool, []);
+        pool = Array.isArray(p) ? p.filter((n) => Number.isInteger(n)) : [];
+      }
+      return pool;
+    },
+
+    savePool(list) {
+      pool = list;
+      ensureDir();
+      writeJsonAtomic(files.pool, pool);
+    },
+
+    addPost(messageId) {
+      const p = store.loadPool();
+      if (p.includes(messageId)) return;
+      p.push(messageId);
+      if (p.length > 500) p.splice(0, p.length - 500); // keep the newest 500
+      store.savePool(p);
+    },
+
+    removePost(messageId) {
+      store.savePool(store.loadPool().filter((n) => n !== messageId));
+    },
+
     pendingCount() {
       return Object.values(store.loadSchedule()).reduce((n, p) => n + p.items.length, 0);
     },
@@ -377,6 +424,8 @@ function createStore(dir, templateFile) {
         store.flush();
       }
       if (d.schedule && typeof d.schedule === 'object') store.saveSchedule(d.schedule);
+      if (d.settings && typeof d.settings === 'object') store.saveSettings({ channelId: String(d.settings.channelId || '') });
+      if (Array.isArray(d.pool)) store.savePool(d.pool.filter((n) => Number.isInteger(n)).slice(-500));
     },
   };
   return store;
