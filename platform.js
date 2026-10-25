@@ -39,6 +39,8 @@ class Platform {
     this.mainSteps = mainSteps;
     this.mainToken = mainToken || '';
     this.file = path.join(dataDir, 'tenants.json');
+    this.backupFile = path.join(dataDir, 'backup.json');
+    this.backupTimers = new Map();
     this.tenants = {}; // customers added in the admin (the "main" bot comes from the environment)
     this.stores = new Map();
     this.bots = new Map();
@@ -294,6 +296,96 @@ class Platform {
     if (channelId !== String(store.loadSettings().channelId || '')) store.savePool([]); // a different channel: forget the old posts
     store.saveSettings({ channelId });
     return { channelId, title: chat.result.title || chat.result.username || '', isAdmin, posts: store.loadPool().length };
+  }
+
+  // ----- backup files sent to your own Telegram every time you save -----
+
+  loadBackupSettings() {
+    try {
+      return JSON.parse(fs.readFileSync(this.backupFile, 'utf8'));
+    } catch {
+      return {};
+    }
+  }
+
+  // For the admin page: never reveals the token itself
+  backupView() {
+    const s = this.loadBackupSettings();
+    return { telegramId: s.telegramId || '', hasToken: !!s.botToken, usesMain: !s.botToken && !!this.mainToken, onSave: s.onSave !== false && !!s.telegramId };
+  }
+
+  setBackupSettings({ telegramId, botToken, onSave }) {
+    const old = this.loadBackupSettings();
+    const next = { ...old };
+    if (telegramId !== undefined) {
+      const id = String(telegramId).trim();
+      if (id && !/^\d{5,15}$/.test(id)) throw userError('Your Telegram ID is a number, for example 123456789. Get it from @userinfobot.');
+      next.telegramId = id;
+    }
+    if (botToken !== undefined) {
+      const t = String(botToken).trim();
+      if (t && !TOKEN_RE.test(t)) throw userError('That does not look like a bot token.');
+      next.botToken = t; // empty = use the main bot
+    }
+    if (onSave !== undefined) next.onSave = !!onSave;
+    fs.mkdirSync(this.dataDir, { recursive: true });
+    writeJsonAtomic(this.backupFile, next);
+    return this.backupView();
+  }
+
+  async sendBackupFile(json, filename, caption) {
+    const s = this.loadBackupSettings();
+    const token = s.botToken || this.mainToken;
+    if (!s.telegramId) throw userError('Add your Telegram ID first.');
+    if (!token) throw userError('No bot to send from. Paste a bot token in the Backups box, or set the main bot.');
+    const fd = new FormData();
+    fd.append('chat_id', s.telegramId);
+    fd.append('caption', caption.slice(0, 1000));
+    fd.append('document', new Blob([json], { type: 'application/json' }), filename);
+    let out;
+    try {
+      const res = await fetch(`${process.env.TELEGRAM_API_BASE || 'https://api.telegram.org'}/bot${token}/sendDocument`, { method: 'POST', body: fd });
+      out = await res.json();
+    } catch {
+      throw userError('Could not reach Telegram. Try again in a moment.');
+    }
+    if (!out.ok) {
+      if (/chat not found|can't initiate|forbidden|blocked/i.test(out.description || '')) {
+        throw userError('Telegram says the bot cannot message you yet. Open that bot in Telegram, press Start, then try again.');
+      }
+      throw userError('Telegram refused the file: ' + (out.description || 'unknown error'));
+    }
+  }
+
+  backupFileName(label) {
+    const slugged = String(label).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'backup';
+    return `bot-backup-${slugged}-${new Date().toISOString().slice(0, 16).replace(/[T:]/g, '-')}.json`;
+  }
+
+  // Sends the customer's backup to your Telegram a few seconds after you save (several quick saves send one file)
+  notifySaved(id) {
+    const s = this.loadBackupSettings();
+    if (!s.telegramId || s.onSave === false) return;
+    clearTimeout(this.backupTimers.get(id));
+    const timer = setTimeout(async () => {
+      this.backupTimers.delete(id);
+      try {
+        const data = this.exportAll(id);
+        const when = new Date().toLocaleString('en-GB', { timeZone: 'Africa/Lagos', dateStyle: 'medium', timeStyle: 'short' });
+        await this.sendBackupFile(JSON.stringify(data), this.backupFileName(data.label), `Backup of ${data.label}, saved ${when}`);
+      } catch (e) {
+        console.error(`[${id}] could not send the backup to Telegram:`, e.message);
+      }
+    }, Number(process.env.BACKUP_DELAY_MS) || 15000);
+    if (timer.unref) timer.unref();
+    this.backupTimers.set(id, timer);
+  }
+
+  // The "send a test" button: sends everything right now
+  async sendBackupNow() {
+    const data = this.exportAll();
+    const when = new Date().toLocaleString('en-GB', { timeZone: 'Africa/Lagos', dateStyle: 'medium', timeStyle: 'short' });
+    await this.sendBackupFile(JSON.stringify(data), this.backupFileName('all-customers'), `Backup of all customers, ${when}. From now on you get one like this each time you save.`);
   }
 
   // ----- backup and restore (important on free hosting, where files can reset) -----

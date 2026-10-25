@@ -172,6 +172,7 @@ async function handleCustomer(req, res, auth, id, rest) {
     const err = validateSteps(data);
     if (err) return send(res, 400, { error: err });
     store.saveSteps(data);
+    platform.notifySaved(id); // sends the backup file to your Telegram, if you turned that on
     return send(res, 200, { ok: true });
   }
   if (m === 'GET' && rest === '/api/stats') {
@@ -210,6 +211,15 @@ async function handleMaster(req, res, p, m) {
   if (tm && m === 'DELETE') {
     await platform.deleteTenant(tm[1]);
     authCache.clear();
+    return send(res, 200, { ok: true });
+  }
+  if (p === '/api/backup-settings' && m === 'GET') return send(res, 200, platform.backupView());
+  if (p === '/api/backup-settings' && m === 'PUT') {
+    const body = await readJson(req, 10_000);
+    return send(res, 200, platform.setBackupSettings(body));
+  }
+  if (p === '/api/backup-test' && m === 'POST') {
+    await platform.sendBackupNow();
     return send(res, 200, { ok: true });
   }
   if (p === '/api/export' && m === 'GET') {
