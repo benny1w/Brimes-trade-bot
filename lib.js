@@ -95,6 +95,7 @@ function validateSteps(data) {
     const step = data.steps[id];
     if (!step || typeof step.text !== 'string' || !step.text.trim()) return `Step "${id}" needs some text.`;
     if (step.text.length > 4000) return `Step "${id}" text is too long (max 4000 characters).`;
+    if (step.video && !/^https?:\/\//i.test(String(step.video).trim())) return `Step "${id}": the video link must start with http:// or https://`;
     const buttons = step.buttons || [];
     if (!Array.isArray(buttons)) return `Step "${id}" has invalid buttons.`;
     if (buttons.length > 20) return `Step "${id}" has too many buttons (max 20).`;
@@ -112,6 +113,7 @@ function validateSteps(data) {
   }
   const e2 = checkFollowupList(data.followups, 'the general follow-ups', data);
   if (e2) return e2;
+  if (data.joinStep && !data.steps[data.joinStep]) return 'The welcome step for channel joiners does not exist.';
   return null;
 }
 
@@ -159,6 +161,7 @@ function cleanSteps(data) {
     clean.steps[id] = {
       text: s.text,
       image: s.image || '',
+      ...(s.video && String(s.video).trim() ? { video: String(s.video).trim() } : {}),
       buttons: (s.buttons || []).map((b) => {
         if (!b.url) return { label: b.label, goto: b.goto };
         const out = { label: b.label, url: b.url };
@@ -177,6 +180,7 @@ function cleanSteps(data) {
     }
     else if (s.noFollowups) clean.steps[id].noFollowups = true; // this step sends no reminders at all
   }
+  if (data.joinStep && data.steps[data.joinStep]) clean.joinStep = data.joinStep; // welcome step for people who join the channel
   const general = cleanFollowupList(data.followups);
   if (general.length) clean.followups = general;
   if (general.length > 1 && data.followupsRandom) clean.followupsRandom = true;

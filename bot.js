@@ -75,7 +75,20 @@ function createBot({ tenant, store, publicBase, webhookSecret }) {
     const text = fillPlaceholders(step.text, from);
     const reply_markup = keyboardFor(step, stepId, chatId);
 
-    if (step.image) {
+    if (step.video) {
+      // A video: sent together with the message when the text fits in a caption, otherwise just before it
+      const fits = text.replace(/<[^>]+>/g, '').length <= 1024;
+      try {
+        const body = { chat_id: chatId, video: step.video };
+        if (fits) Object.assign(body, { caption: text, parse_mode: 'HTML', reply_markup });
+        await tg('sendVideo', body);
+        if (fits) return;
+      } catch (e) {
+        console.error(tag, 'Video failed, continuing without it:', e.message);
+      }
+    }
+
+    if (step.image && !step.video) {
       const plainLength = text.replace(/<[^>]+>/g, '').length;
       if (plainLength <= 1024) {
         // Short enough: send the picture and the message together as one (caption + buttons)
@@ -129,7 +142,9 @@ function createBot({ tenant, store, publicBase, webhookSecret }) {
       }
     }
     // The request gives the bot a direct line to the person (valid for a few minutes), even if they never opened the bot
-    await sendStep(req.user_chat_id || user.id, store.loadSteps().start, user);
+    const all = store.loadSteps();
+    const welcome = all.joinStep && all.steps[all.joinStep] ? all.joinStep : all.start; // your own welcome for channel joiners, if you set one
+    await sendStep(req.user_chat_id || user.id, welcome, user);
   }
 
   // A post in the customer's channel: remember its number so it can be used as a reminder message
