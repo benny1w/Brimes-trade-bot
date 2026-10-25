@@ -4,45 +4,71 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>My Customers</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Figtree:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-  :root { --bg:#0f1720; --card:#17212c; --line:#26343f; --text:#e8eef3; --muted:#8fa1b0; --accent:#2f9bff; --danger:#ff5d5d; --ok:#34c77b; --warn:#f0b429; }
-  * { box-sizing: border-box; }
-  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.4 system-ui,sans-serif; }
-  header { padding:14px 16px 6px; }
-  header h1 { font-size:18px; margin:0; }
-  .muted { color:var(--muted); font-size:13px; }
-  main { max-width:760px; margin:0 auto; padding:0 16px 40px; }
-  #bar { position:sticky; top:0; z-index:5; background:var(--bg); padding:10px 16px; border-bottom:1px solid var(--line); }
-  #bar .inner { max-width:760px; margin:0 auto; display:flex; flex-direction:column; gap:8px; }
-  .actions { display:flex; gap:8px; flex-wrap:wrap; }
-  input { width:100%; background:#0f1720; color:var(--text); border:1px solid var(--line); border-radius:8px; padding:10px; font:inherit; }
-  label { display:block; font-size:12px; color:var(--muted); margin:10px 0 4px; }
-  button { background:var(--card); color:var(--text); border:1px solid var(--line); border-radius:8px; padding:8px 12px; font:inherit; cursor:pointer; }
-  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; }
-  button.danger { color:var(--danger); }
-  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px; margin:12px 0; }
-  .warn { border-color:var(--warn); background:#2a2412; color:#f6dd9b; font-size:13px; }
-  .cust .top { display:flex; gap:10px; align-items:center; justify-content:space-between; }
-  .cust .name { font-weight:700; font-size:16px; word-break:break-word; }
-  .cust .more { display:none; margin-top:10px; padding-top:10px; border-top:1px solid var(--line); gap:8px; flex-wrap:wrap; }
-  .cust.open .more { display:flex; }
-  .badge { font-size:11px; border-radius:20px; padding:2px 8px; margin-left:6px; background:var(--warn); color:#2a1d00; font-weight:600; }
-  .badge.main { background:var(--accent); color:#fff; }
-  .result { border-color:var(--ok); }
-  .result code { display:block; background:#0f1720; border:1px solid var(--line); border-radius:8px; padding:8px; margin:4px 0 8px; word-break:break-all; user-select:all; }
-  #toast { position:fixed; bottom:16px; left:50%; transform:translateX(-50%); padding:10px 16px; border-radius:8px; background:var(--ok); color:#06210f; font-weight:600; display:none; max-width:90%; z-index:10; }
-  #toast.err { background:var(--danger); color:#fff; }
+  :root {
+    --bg:#0b1219; --surface:#121b24; --raised:#192533; --line:#233241; --line-soft:#1b2834;
+    --text:#e8eff5; --muted:#8798a8; --accent:#46b6f5; --accent-ink:#04202f; --bubble:#1d3b55; --bubble-line:#2b5373;
+    --danger:#ff7676; --ok:#3ecf8e; --warn:#f3bb4e; --focus:rgba(70,182,245,.45);
+    --display:'Bricolage Grotesque','Figtree',system-ui,sans-serif; --ui:'Figtree',system-ui,-apple-system,'Segoe UI',sans-serif;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg:#f2f5f8; --surface:#ffffff; --raised:#eef2f6; --line:#d8e0e8; --line-soft:#e6ecf1;
+      --text:#13202b; --muted:#5d6f80; --accent:#0f7ab8; --accent-ink:#ffffff; --bubble:#dcedf9; --bubble-line:#b9d9ef;
+      --danger:#cf3b3b; --ok:#16955f; --warn:#a86d00; --focus:rgba(15,122,184,.35); }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.5 var(--ui); -webkit-text-size-adjust:100%; }
   a { color:var(--accent); }
-  .empty { text-align:center; padding:30px 10px; }
+  .muted { color:var(--muted); font-size:13px; }
+  :focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  header { max-width:760px; margin:0 auto; padding:18px 16px 4px; }
+  header h1 { font:700 24px/1.15 var(--display); letter-spacing:-.01em; margin:0; display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; }
+  header h1 .muted { font:500 14px var(--ui); }
+  main { max-width:760px; margin:0 auto; padding:0 16px 60px; }
+  #bar { position:sticky; top:0; z-index:5; background:color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter:blur(10px); padding:10px 16px; border-bottom:1px solid var(--line-soft); }
+  #bar .inner { max-width:760px; margin:0 auto; display:flex; flex-direction:column; gap:10px; }
+  .actions { display:flex; gap:8px; flex-wrap:wrap; }
+  input { width:100%; background:var(--surface); color:var(--text); border:1px solid var(--line); border-radius:10px; padding:10px 12px; min-height:44px; font:inherit; transition:border-color .15s, box-shadow .15s; }
+  input:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px var(--focus); }
+  input::placeholder { color:color-mix(in srgb, var(--muted) 70%, transparent); }
+  label { display:block; font-size:13px; color:var(--muted); margin:14px 0 6px; font-weight:500; }
+  button { font:500 14px var(--ui); color:var(--text); background:var(--raised); border:1px solid var(--line); border-radius:10px; padding:9px 13px; min-height:40px; cursor:pointer; transition:border-color .15s, transform .05s; white-space:nowrap; }
+  button:hover { border-color:var(--muted); }
+  button:active { transform:translateY(1px); }
+  button.primary { background:var(--accent); border-color:var(--accent); color:var(--accent-ink); font-weight:600; }
+  button.danger { color:var(--danger); background:transparent; }
+  button.danger:hover { border-color:var(--danger); }
+  .card { background:var(--surface); border:1px solid var(--line-soft); border-radius:18px; padding:16px; margin:14px 0; }
+  .warn { border-color:color-mix(in srgb, var(--warn) 50%, var(--line)); background:color-mix(in srgb, var(--warn) 9%, var(--surface)); font-size:13.5px; border-left:3px solid var(--warn); }
+  .cust .top { display:flex; gap:12px; align-items:center; }
+  .avatar { width:44px; height:44px; border-radius:13px; background:var(--bubble); border:1px solid var(--bubble-line); display:grid; place-items:center; font:700 19px var(--display); flex:none; }
+  .cust.paused .avatar { opacity:.5; }
+  .cust .who { flex:1; min-width:0; }
+  .cust .name { font:700 17px/1.2 var(--display); word-break:break-word; display:flex; align-items:center; flex-wrap:wrap; gap:6px; }
+  .cust .meta { margin-top:3px; }
+  .cust .btns { display:flex; gap:8px; margin-top:12px; flex-wrap:wrap; }
+  .cust .more { display:none; margin-top:10px; padding-top:12px; border-top:1px solid var(--line-soft); gap:8px; flex-wrap:wrap; }
+  .cust.open .more { display:flex; }
+  .badge { font:600 11px var(--ui); border-radius:99px; padding:2px 8px; background:var(--warn); color:#2a1d00; }
+  .badge.main { background:var(--accent); color:var(--accent-ink); }
+  .pill { font-size:12px; color:var(--muted); background:var(--raised); border:1px solid var(--line-soft); border-radius:99px; padding:2px 9px; white-space:nowrap; }
+  .pills { display:flex; gap:6px; flex-wrap:wrap; margin-top:6px; }
+  #toast { position:fixed; bottom:20px; left:50%; transform:translateX(-50%); padding:11px 18px; border-radius:12px; background:var(--ok); color:#04170e; font-weight:600; display:none; max-width:90%; z-index:10; box-shadow:0 8px 24px rgba(0,0,0,.3); }
+  #toast.err { background:var(--danger); color:#fff; }
+  .empty { text-align:center; padding:36px 10px; }
+  @media (prefers-reduced-motion: reduce) { * { transition:none !important; } }
 </style>
 </head>
 <body>
 <header>
-  <h1>🤖 My Customers <span class="muted" id="count"></span></h1>
+  <h1>My customers <span class="muted" id="count"></span></h1>
 </header>
 <div id="bar">
   <div class="inner">
-    <input id="search" type="search" placeholder="🔍 Search customers by name, ID or bot username...">
+    <input id="search" type="search" placeholder="🔍 Search by name, ID or @bot">
     <div class="actions">
       <button class="primary" id="addBtn">+ Add customer</button>
       <button id="backupBtn">⬇ Backup all</button>
@@ -118,17 +144,19 @@ function render() {
     return;
   }
   box.innerHTML = list.slice(0, shown).map((t) => `
-    <div class="card cust ${openRow === t.id ? 'open' : ''}" data-id="${esc(t.id)}">
+    <div class="card cust ${openRow === t.id ? 'open' : ''} ${t.active ? '' : 'paused'}" data-id="${esc(t.id)}">
       <div class="top">
-        <div>
+        <div class="avatar">${esc((t.name.trim()[0] || '?').toUpperCase())}</div>
+        <div class="who">
           <div class="name">${esc(t.name)}${t.isMain ? '<span class="badge main">MAIN</span>' : ''}${t.active ? '' : '<span class="badge">PAUSED</span>'}</div>
-          <div class="muted">${t.botUsername ? '<a href="https://t.me/' + esc(t.botUsername) + '" target="_blank" rel="noopener">@' + esc(t.botUsername) + '</a> · ' : ''}${esc(t.id)} · ${t.users} user${t.users === 1 ? '' : 's'} · ${t.pending} reminder${t.pending === 1 ? '' : 's'}</div>
+          <div class="muted meta">${t.botUsername ? '<a href="https://t.me/' + esc(t.botUsername) + '" target="_blank" rel="noopener">@' + esc(t.botUsername) + '</a>' : esc(t.id)}</div>
+          <div class="pills"><span class="pill">${t.users} user${t.users === 1 ? '' : 's'}</span><span class="pill">${t.pending} reminder${t.pending === 1 ? '' : 's'} waiting</span></div>
         </div>
-        <div class="actions">
-          <button class="primary" data-act="open">Open</button>
-          <button data-act="backup">⬇ Backup</button>
-          ${t.isMain ? '' : '<button data-act="more">⋯</button>'}
-        </div>
+      </div>
+      <div class="btns">
+        <button class="primary" data-act="open">Open</button>
+        <button data-act="backup">⬇ Backup</button>
+        ${t.isMain ? '' : '<button data-act="more">⋯ More</button>'}
       </div>
       <div class="more">
         <button data-act="rename">Rename</button>
