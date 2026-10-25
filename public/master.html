@@ -73,12 +73,15 @@
       <button class="primary" id="addBtn">+ Add customer</button>
       <button id="backupBtn">⬇ Backup all</button>
       <button id="restoreBtn">⬆ Restore</button>
+      <button id="bkBtn">🔔 Auto backup</button>
       <input type="file" id="restoreFile" accept=".json,application/json" style="display:none">
     </div>
   </div>
 </div>
 <main>
   <div class="card warn" id="warnBox">⚠️ On free hosting, saved data can reset when the app restarts. Tap <b>Backup all</b> (one file for everyone) or the <b>Backup</b> button on a customer (a file named after them) after big changes. Tap <b>Restore</b> and pick a file if anything disappears.</div>
+
+  <div class="card" id="bkPanel" style="display:none"></div>
 
   <div class="card" id="addForm" style="display:none">
     <b>Add a customer</b>
@@ -257,6 +260,41 @@ $('#restoreFile').onchange = async (e) => {
     toast(`Restored ${out.customers} customer${out.customers === 1 ? '' : 's'}`);
     await load();
   } catch (err) { toast(err.message || 'Could not read that file.', true); }
+};
+
+async function loadBackup(msg, isErr) {
+  const box = $('#bkPanel');
+  let s = { telegramId: '', hasToken: false, usesMain: false, onSave: false };
+  try { s = await api('/api/backup-settings'); } catch (e) {}
+  box.innerHTML = `<b style="font:700 16px var(--display)">🔔 Backup to my Telegram</b>
+    <div class="muted" style="margin-top:6px">Every time you tap Save changes on a customer, the bot sends that customer's backup file to your own Telegram. The file is named after the customer. To get a customer back, tap Restore and pick that file.</div>
+    <label>Your Telegram ID (a number)</label>
+    <input id="bkId" inputmode="numeric" placeholder="123456789" value="${esc(s.telegramId)}">
+    <div class="muted" style="margin-top:6px">Open <b>@userinfobot</b> in Telegram and send /start. It replies with your ID.</div>
+    <label>Bot that sends the file (optional)</label>
+    <input id="bkToken" placeholder="${s.hasToken ? 'A token is saved. Paste a new one to change it.' : s.usesMain ? 'Empty = your main bot' : 'Paste a bot token'}" autocomplete="off">
+    <div class="muted" style="margin-top:6px">Open this bot in Telegram once and press <b>Start</b>, or it cannot message you.</div>
+    <label class="chk" style="display:flex;gap:9px;align-items:center;color:var(--text);font-size:14px;font-weight:400"><input type="checkbox" id="bkOn" style="width:20px;height:20px;min-height:0;accent-color:var(--accent)" ${s.onSave || !s.telegramId ? 'checked' : ''}> Send a file every time I save</label>
+    <div class="actions" style="margin-top:12px">
+      <button class="primary" id="bkSave">Save and send a test</button>
+    </div>
+    <div class="muted" id="bkMsg" style="margin-top:8px;${isErr ? 'color:var(--danger)' : ''}">${msg ? esc(msg) : (s.telegramId ? 'Turned on. The files contain your customers\' bot tokens, so keep that chat private.' : 'Not set up yet.')}</div>`;
+  $('#bkSave').onclick = async () => {
+    $('#bkMsg').textContent = 'Saving and sending...';
+    try {
+      const body = { telegramId: $('#bkId').value, onSave: $('#bkOn').checked };
+      if ($('#bkToken').value.trim()) body.botToken = $('#bkToken').value;
+      await api('/api/backup-settings', jsonOpts('PUT', body));
+      await api('/api/backup-test', { method: 'POST' });
+      loadBackup('Done. Check your Telegram, a backup file just arrived.');
+    } catch (e) { loadBackup(e.message, true); }
+  };
+}
+$('#bkBtn').onclick = () => {
+  const box = $('#bkPanel');
+  if (box.style.display === 'block') { box.style.display = 'none'; return; }
+  box.style.display = 'block';
+  loadBackup();
 };
 
 load().catch((e) => toast(e.message, true));
