@@ -4,64 +4,183 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Bot Admin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Figtree:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-  :root { --bg:#0f1720; --card:#17212c; --line:#26343f; --text:#e8eef3; --muted:#8fa1b0; --accent:#2f9bff; --danger:#ff5d5d; --ok:#34c77b; }
-  * { box-sizing: border-box; }
-  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.4 system-ui,sans-serif; }
-  header { position:sticky; top:0; z-index:5; background:var(--bg); border-bottom:1px solid var(--line); padding:12px 16px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
-  header h1 { font-size:17px; margin:0; flex:1; }
+  :root {
+    --bg:#0b1219; --surface:#121b24; --raised:#192533; --line:#233241; --line-soft:#1b2834;
+    --text:#e8eff5; --muted:#8798a8; --accent:#46b6f5; --accent-ink:#04202f; --bubble:#1d3b55; --bubble-line:#2b5373;
+    --danger:#ff7676; --ok:#3ecf8e; --warn:#f3bb4e; --focus:rgba(70,182,245,.45);
+    --display:'Bricolage Grotesque','Figtree',system-ui,sans-serif; --ui:'Figtree',system-ui,-apple-system,'Segoe UI',sans-serif;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg:#f2f5f8; --surface:#ffffff; --raised:#eef2f6; --line:#d8e0e8; --line-soft:#e6ecf1;
+      --text:#13202b; --muted:#5d6f80; --accent:#0f7ab8; --accent-ink:#ffffff; --bubble:#dcedf9; --bubble-line:#b9d9ef;
+      --danger:#cf3b3b; --ok:#16955f; --warn:#a86d00; --focus:rgba(15,122,184,.35); }
+  }
+  * { box-sizing:border-box; }
+  html { -webkit-text-size-adjust:100%; }
+  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.5 var(--ui); }
+  a { color:var(--accent); }
+  code { font-size:12px; background:var(--raised); padding:1px 5px; border-radius:5px; }
   .muted { color:var(--muted); font-size:13px; }
-  main { max-width:760px; margin:0 auto; padding:16px; }
-  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px; margin-bottom:14px; }
-  .card.start { border-color:var(--accent); }
-  .row { display:flex; gap:8px; align-items:center; margin-bottom:8px; }
-  label { display:block; font-size:12px; color:var(--muted); margin:10px 0 4px; }
-  input, textarea, select { width:100%; background:#0f1720; color:var(--text); border:1px solid var(--line); border-radius:8px; padding:9px; font:inherit; }
-  textarea { min-height:110px; resize:vertical; }
-  button { background:var(--card); color:var(--text); border:1px solid var(--line); border-radius:8px; padding:8px 12px; font:inherit; cursor:pointer; }
-  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; }
-  button.danger { color:var(--danger); }
-  .stepid { font-weight:700; font-size:16px; }
-  .badge { font-size:11px; background:var(--accent); color:#fff; border-radius:20px; padding:2px 8px; margin-left:6px; }
-  .btn-row { display:grid; grid-template-columns: 1.2fr 0.8fr 1.2fr auto; gap:6px; margin-bottom:6px; }
-  .btn-row input, .btn-row select { padding:7px; }
-  #toast { position:fixed; bottom:16px; left:50%; transform:translateX(-50%); padding:10px 16px; border-radius:8px; background:var(--ok); color:#06210f; font-weight:600; display:none; max-width:90%; }
-  #toast.err { background:var(--danger); color:#fff; }
-  .then-row { display:flex; flex-direction:column; gap:4px; margin:-2px 0 10px 10px; padding-left:10px; border-left:2px solid var(--accent); }
-  .fu { border:1px dashed var(--line); border-radius:10px; padding:10px; margin:8px 0; }
-  .fu-top { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-bottom:8px; }
-  .fu-top .num { width:72px; padding:7px; }
-  .fu-top .unit { width:104px; padding:7px; }
+  :focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+
+  /* top bar */
+  header { border-bottom:1px solid var(--line-soft); padding:12px 16px 12px; }
+  .bar { max-width:760px; margin:0 auto; }
+  #back { display:none; align-items:center; gap:4px; font-size:13px; color:var(--muted); text-decoration:none; margin-bottom:2px; }
+  #back:hover { color:var(--text); }
+  .titleline { display:flex; align-items:center; gap:12px; }
+  .avatar { width:40px; height:40px; border-radius:12px; background:var(--bubble); border:1px solid var(--bubble-line); display:grid; place-items:center; font:700 18px var(--display); flex:none; }
+  .titleline h1 { margin:0; font:700 21px/1.15 var(--display); letter-spacing:-.01em; }
+  #stats { display:flex; gap:6px; flex-wrap:wrap; margin-top:5px; }
+  .pill { font-size:12px; color:var(--muted); background:var(--raised); border:1px solid var(--line-soft); border-radius:99px; padding:2px 9px; }
+  .pill.live { color:var(--text); }
+  .toolbar { display:flex; gap:8px; margin-top:10px; flex-wrap:wrap; }
+  #navhint { max-width:760px; margin:10px auto 0; padding:0 16px; }
+
+  main { max-width:760px; margin:0 auto; padding:14px 16px 140px; }
+  .intro { color:var(--muted); font-size:13.5px; margin:0 0 16px; max-width:60ch; }
+
+  /* buttons */
+  button { font:500 14px var(--ui); color:var(--text); background:var(--raised); border:1px solid var(--line); border-radius:10px; padding:9px 13px; min-height:40px; cursor:pointer; transition:background .15s,border-color .15s,transform .05s; white-space:nowrap; }
+  button:hover { border-color:var(--muted); }
+  button:active { transform:translateY(1px); }
+  button.danger { color:var(--danger); background:transparent; }
+  button.danger:hover { border-color:var(--danger); }
+  button.primary { background:var(--accent); border-color:var(--accent); color:var(--accent-ink); font-weight:600; }
+  button.ghost { background:transparent; border-style:dashed; color:var(--muted); }
+  button.ghost:hover { color:var(--text); border-color:var(--accent); }
+  button.small { min-height:34px; padding:6px 11px; font-size:13px; }
+  button[data-act="delfu"], button[data-act="delbtn"], button[data-act="delfbtn"], button[data-act="delvar"] { width:40px; padding:0; flex:none; }
+
+  /* floating save */
+  #save { position:fixed; right:16px; bottom:16px; z-index:30; min-height:50px; padding:0 22px; border-radius:99px; font-size:15px; box-shadow:0 8px 28px rgba(0,0,0,.35); display:flex; align-items:center; gap:8px; }
+  #save::before { content:''; width:8px; height:8px; border-radius:50%; background:transparent; transition:background .2s; }
+  #save.dirty::before { background:var(--warn); box-shadow:0 0 0 3px color-mix(in srgb, var(--warn) 30%, transparent); }
+
+  /* forms */
+  label { display:block; font-size:13px; color:var(--muted); margin:14px 0 6px; font-weight:500; }
+  input, textarea, select { width:100%; background:var(--bg); color:var(--text); border:1px solid var(--line); border-radius:10px; padding:10px 12px; min-height:42px; font:inherit; transition:border-color .15s, box-shadow .15s; }
+  input:focus, textarea:focus, select:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px var(--focus); }
+  input::placeholder, textarea::placeholder { color:color-mix(in srgb, var(--muted) 70%, transparent); }
+  textarea { min-height:96px; resize:none; overflow:hidden; line-height:1.5; }
+  .hint { font-size:12.5px; color:var(--muted); margin-top:6px; line-height:1.5; max-width:62ch; }
+  .hint b { color:var(--text); font-weight:600; }
+  details.how { margin:8px 0 4px; }
+  details.how summary { cursor:pointer; color:var(--accent); font-size:13px; font-weight:500; padding:4px 0; }
+  details.how .hint { margin-top:2px; }
+  .sect { margin-top:18px; padding-top:6px; border-top:1px solid var(--line-soft); }
+
+  /* cards */
+  .card { background:var(--surface); border:1px solid var(--line-soft); border-radius:18px; padding:16px; margin-bottom:16px; }
+  .panel { border-color:var(--line); }
+  .panel > b:first-child { font:700 16px var(--display); }
+  .card.start { border-color:var(--bubble-line); }
+
+  /* step header */
+  .row { display:flex; gap:8px; align-items:center; }
+  .stephead { display:flex; align-items:center; gap:10px; width:100%; background:none; border:0; padding:0; min-height:0; text-align:left; cursor:pointer; color:var(--text); }
+  .stephead:hover { border:0; }
+  .stepid { font:700 17px var(--display); letter-spacing:-.005em; display:flex; align-items:center; gap:8px; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; }
+  .badge { font:600 11px var(--ui); background:var(--accent); color:var(--accent-ink); border-radius:99px; padding:2px 8px; }
+  .chev { width:28px; height:28px; border-radius:8px; display:grid; place-items:center; color:var(--muted); transition:transform .2s; flex:none; }
+  .card:not(.collapsed) .chev { transform:rotate(90deg); }
+  .tags { display:flex; gap:6px; flex-wrap:wrap; margin:8px 0 0; }
+
+  /* the chat preview: what the person will see in Telegram */
+  .preview { margin:12px 0 4px; display:flex; flex-direction:column; align-items:flex-start; gap:6px; }
+  .bubble { background:var(--bubble); border:1px solid var(--bubble-line); border-radius:6px 18px 18px 18px; padding:10px 13px; max-width:92%; font-size:14.5px; line-height:1.45; overflow-wrap:anywhere; }
+  .bubble .media { display:flex; align-items:center; gap:6px; font-size:12.5px; color:var(--muted); background:color-mix(in srgb, var(--bg) 40%, transparent); border-radius:10px; padding:6px 9px; margin:-2px 0 8px; }
+  .bubble.empty { color:var(--muted); font-style:italic; }
+  .keys { display:flex; flex-direction:column; gap:4px; width:92%; }
+  .key { background:color-mix(in srgb, var(--bubble) 70%, var(--bg)); border:1px solid var(--bubble-line); border-radius:10px; padding:7px 10px; font-size:13.5px; font-weight:500; text-align:center; position:relative; }
+  .key small { display:block; font-size:11.5px; font-weight:400; color:var(--muted); margin-top:1px; }
+
+  /* editor area */
+  .card.collapsed .edit { display:none; }
+  .edit { margin-top:6px; border-top:1px solid var(--line-soft); padding-top:4px; animation:open .18s ease-out; }
+  @keyframes open { from { opacity:0; transform:translateY(-4px);} to { opacity:1; transform:none; } }
+  @media (prefers-reduced-motion: reduce) { .edit { animation:none; } * { transition:none !important; } }
+  .actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:16px; }
+
+  /* button rows */
+  .btn-row { display:grid; grid-template-columns:128px minmax(0,1fr) 40px; gap:8px; margin-bottom:8px; padding:10px; background:var(--bg); border:1px solid var(--line-soft); border-radius:12px; }
+  .btn-row input, .btn-row select { background:var(--surface); }
+  .btn-row [data-f="label"], .btn-row [data-f="fu-bl"] { grid-column:1 / 3; grid-row:1; min-width:0; }
+  .btn-row button.danger { grid-column:3; grid-row:1; min-height:42px; }
+  .btn-row [data-f="kind"], .btn-row [data-f="fu-bkind"] { grid-column:1; grid-row:2; }
+  .btn-row [data-f="url"], .btn-row [data-f="goto"], .btn-row [data-f="fu-bu"], .btn-row [data-f="fu-bg"] { grid-column:2 / 4; grid-row:2; }
+  .then-row { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:-2px 0 10px 12px; padding:2px 0 2px 12px; border-left:2px solid var(--bubble-line); }
+  .then-row select { width:auto; min-width:0; flex:1 1 180px; }
+  .then-row .num { width:76px; display:inline-block; }
+
+  /* reminders */
+  .reminders { border-left:3px solid var(--warn); }
+  .reminders > label:first-child, .reminders .remtitle { font:700 16px var(--display); color:var(--text); margin:0 0 4px; }
+  .fu { background:var(--bg); border:1px solid var(--line-soft); border-radius:14px; padding:12px; margin:10px 0; }
+  .fu-top { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:10px; }
+  .fu-top .num { width:78px; }
+  .fu-top .unit { width:112px; }
+  .fu-top button.danger { margin-left:auto; }
   .fu textarea { min-height:80px; }
-  .fu .var { display:flex; gap:6px; align-items:flex-start; margin:6px 0; }
-  .fu .var textarea { min-height:64px; }
-  .fu label.chk { display:flex; align-items:center; gap:6px; margin:0; color:var(--text); font-size:13px; }
-  .fu label.chk input { width:auto; }
-  .fu button[data-act="addvar"] { margin-top:6px; }
-  .hint { font-size:12px; color:var(--muted); margin-top:4px; }
+  .fu label.chk, label.chk { display:flex; align-items:center; gap:9px; margin:4px 0; color:var(--text); font-size:13.5px; font-weight:400; }
+  label.chk input { width:20px; height:20px; min-height:0; accent-color:var(--accent); flex:none; }
+  .fu .var { display:flex; gap:8px; align-items:flex-start; margin:8px 0; }
+  .fu > input { margin-top:8px; }
+  .fu > button { margin-top:8px; }
+  .reminders > button[data-act="addfu"] { margin-top:4px; }
+
+  /* people */
+  table { width:100%; border-collapse:collapse; font-size:13.5px; }
+  th { text-align:left; font-weight:500; color:var(--muted); padding:8px 6px; border-bottom:1px solid var(--line); }
+  td { padding:9px 6px; border-bottom:1px solid var(--line-soft); }
+
+  #toast { position:fixed; left:50%; bottom:84px; transform:translateX(-50%); padding:11px 18px; border-radius:12px; background:var(--ok); color:#04170e; font-weight:600; display:none; max-width:90%; z-index:40; box-shadow:0 8px 24px rgba(0,0,0,.3); }
+  #toast.err { background:var(--danger); color:#fff; }
+  .foot { text-align:center; color:var(--muted); font-size:12px; margin:36px 0 0; }
+  @media (min-width:700px) { .btn-row { grid-template-columns:1.2fr .8fr 1.4fr 40px; } .btn-row [data-f="label"],.btn-row [data-f="fu-bl"] { grid-column:1; } .btn-row button.danger { grid-column:4; } .btn-row [data-f="kind"],.btn-row [data-f="fu-bkind"] { grid-column:2; grid-row:1; } .btn-row [data-f="url"],.btn-row [data-f="goto"],.btn-row [data-f="fu-bu"],.btn-row [data-f="fu-bg"] { grid-column:3; grid-row:1; } }
 </style>
 </head>
 <body>
 <header>
-  <h1><a id="back" href="/" style="display:none;color:var(--accent);text-decoration:none;font-weight:400">← Customers</a> <span id="who">🤖 Bot Admin</span> <span class="muted" id="stats"></span></h1>
-  <button id="peopleBtn">👥 People</button>
-  <button id="channelBtn">📣 Channel</button>
-  <button id="addStep">+ New step</button>
-  <button class="primary" id="save">Save changes</button>
+  <div class="bar">
+    <a id="back" href="/">← All customers</a>
+    <div class="titleline">
+      <div class="avatar" id="avatar">🤖</div>
+      <div style="min-width:0">
+        <h1 id="who">Bot admin</h1>
+        <div id="stats"></div>
+      </div>
+    </div>
+    <div class="toolbar">
+      <button id="peopleBtn" class="small">👥 People</button>
+      <button id="channelBtn" class="small">📣 Channel</button>
+      <button id="addStep" class="small">+ New step</button>
+      <button id="foldBtn" class="small">Collapse all</button>
+    </div>
+  </div>
 </header>
+<p class="muted" id="navhint" style="display:none"></p>
 <main>
-  <p class="muted" id="navhint" style="display:none"></p>
-  <p class="muted">Every step is one message the bot sends. Buttons either go to another step or open a link. Changes go live as soon as you save, no restart needed.</p>
-  <div class="card" id="people" style="display:none"></div>
-  <div class="card" id="channel" style="display:none"></div>
+  <p class="intro">Each step is one message the bot sends. The blue bubble shows what your people will see. Changes go live the moment you save, no restart needed.</p>
+  <div class="card panel" id="people" style="display:none"></div>
+  <div class="card panel" id="channel" style="display:none"></div>
   <div id="steps"></div>
-  <p class="muted" style="text-align:center;margin:30px 0 60px">Page version: v4 (channel + follow-up buttons + next step)</p>
+  <p class="foot">Page version: v5 (new look, channel welcome, step video)</p>
 </main>
+<button class="primary" id="save">Save changes</button>
 <div id="toast"></div>
 
 <script>
 let data = { start: '', steps: {} };
 let dirty = false; // unsaved changes on this page
+const collapsed = new Set(); // steps folded up to just their preview
+let foldInit = false;
+function markDirty() { dirty = true; $('#save').classList.add('dirty'); }
+function markClean() { dirty = false; $('#save').classList.remove('dirty'); }
 let me = null;
 const owner = (id) => (id === '__general__' ? data : data.steps[id]);
 const myId = (location.pathname.match(/^\/c\/([a-z0-9-]+)\//) || [])[1];
@@ -79,7 +198,8 @@ function toast(msg, isErr) {
 async function load() {
   data = await (await fetch('api/steps')).json();
   const s = await (await fetch('api/stats')).json();
-  $('#stats').textContent = `· ${s.users} user${s.users === 1 ? '' : 's'} · ${s.pending || 0} reminder${s.pending === 1 ? '' : 's'} waiting`;
+  $('#stats').innerHTML = `<span class="pill">${s.users} user${s.users === 1 ? '' : 's'}</span><span class="pill ${s.pending ? 'live' : ''}">${s.pending || 0} reminder${s.pending === 1 ? '' : 's'} waiting</span>`;
+  if (!foldInit) { foldInit = true; const ids = Object.keys(data.steps); if (ids.length > 2) ids.forEach((id) => collapsed.add(id)); if ((data.followups || []).length) collapsed.add('__general__'); }
   render();
 }
 
@@ -87,12 +207,21 @@ async function loadChannel(msg, isErr) {
   const box = $('#channel');
   let c = { channelId: '', posts: 0 };
   try { c = await (await fetch('api/channel')).json(); } catch (e) {}
-  box.innerHTML = `<b>📣 Channel for reminder messages</b>
-    <div class="hint">The customer makes a Telegram channel and adds their bot to it as an <b>admin</b>. They write their reminder messages as posts there (text, pictures, videos). Paste the channel ID below. Then add a follow-up (on a step, or in "Reminders for all steps") and set the time: the message is taken from this channel.</div>
-    <div class="hint">Channel ID looks like <code>-1001234567890</code> (or <code>@channelname</code> if it is public). The bot only sees posts made after it joined. To add an older post, the customer can just edit it once.</div>
+  box.innerHTML = `<b>📣 Channel</b>
+    <div class="hint">The customer makes a Telegram channel and adds their bot as an <b>admin</b>. Their posts there become the reminder messages. Paste the channel ID, which looks like <code>-1001234567890</code> (or <code>@channelname</code> if it is public).</div>
+    <details class="how"><summary>Good to know</summary><div class="hint">The bot only sees posts made after it became an admin. To use an older post, the customer edits it once. If a post is deleted, the bot drops it the next time it tries to send it.</div></details>
     <input id="chId" placeholder="-1001234567890" value="${esc(c.channelId || '')}" style="margin-top:8px">
-    <div style="margin-top:8px"><button class="primary" id="chSave">Save and check</button></div>
+    <div style="margin-top:10px"><button class="primary" id="chSave">Save and check</button></div>
+    <div class="sect"></div>
+    <label style="margin-top:6px">Welcome for people who join the channel</label>
+    <select id="joinStep">
+      <option value="" ${!data.joinStep ? 'selected' : ''}>The start step (default)</option>
+      ${Object.entries(data.steps).map(([sid, st]) => `<option value="${esc(sid)}" ${sid === data.joinStep ? 'selected' : ''}>${esc(sid)} — ${esc(st.text.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim().slice(0, 30))}</option>`).join('')}
+    </select>
+    <div class="hint">The bot accepts the person and sends them this step straight away, with its text, picture or video, and buttons. Make the step with <b>+ New step</b>, pick it here, then tap <b>Save changes</b>.</div>
+    <details class="how"><summary>What the channel needs</summary><div class="hint">The bot must be an admin with the "Invite users" permission, and the channel's invite link must have <b>"Request admin approval"</b> turned on. Without that, nobody sends a join request.</div></details>
     <div class="hint" id="chMsg" style="${isErr ? 'color:#ff8a8a' : ''}">${msg ? esc(msg) : (c.channelId ? `Saved. The bot has collected ${c.posts} post${c.posts === 1 ? '' : 's'} from this channel so far.` : 'No channel set.')}</div>`;
+  $('#joinStep').onchange = (e) => { if (e.target.value) data.joinStep = e.target.value; else delete data.joinStep; markDirty(); toast('Now tap Save changes to make it live.'); render(); };
   $('#chSave').onclick = async () => {
     $('#chMsg').textContent = 'Checking with Telegram...';
     try {
@@ -123,7 +252,7 @@ $('#peopleBtn').onclick = async () => {
     const rows = out.users.map((u) => `<tr><td>${esc(u.first_name || '-')}</td><td>${u.username ? '@' + esc(u.username) : '-'}</td><td><code>${esc(u.id)}</code></td><td>${u.via === 'channel' ? 'joined channel' : 'messaged bot'}</td><td>${esc((u.last_seen || '').slice(0, 10))}</td></tr>`).join('');
     box.innerHTML = `<b>People who reached this bot (${out.users.length})</b>
       <div class="hint">The bot knows each person's ID the moment they message it or ask to join your channel, so it can message them any time (unless they block it).</div>
-      <div style="overflow-x:auto"><table style="width:100%;font-size:13px;border-collapse:collapse"><tr class="muted"><td>Name</td><td>Username</td><td>ID</td><td>How</td><td>Last seen</td></tr>${rows}</table></div>`;
+      <div style="overflow-x:auto"><table style="width:100%;font-size:13px;border-collapse:collapse"><tr><th>Name</th><th>Username</th><th>ID</th><th>How</th><th>Last seen</th></tr>${rows}</table></div>`;
   } catch (e) { box.textContent = 'Could not load the list.'; }
 };
 
@@ -172,7 +301,7 @@ function fuButtonsHtml(f, j) {
     <select data-f="fu-bthen" data-j="${j}" data-b="${bi}"><option value="" ${!b.then ? 'selected' : ''}>Nothing (just open the link)</option>${Object.entries(data.steps).map(([sid, st]) => `<option value="${esc(sid)}" ${sid === b.then ? 'selected' : ''}>${esc(sid)} — ${esc(st.text.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim().slice(0, 28))}</option>`).join('')}</select>
     ${b.then ? `<span class="muted">after <input class="num" type="number" min="0.1" max="1440" step="any" data-f="fu-bthenAfter" data-j="${j}" data-b="${bi}" value="${esc(b.thenAfter || 1)}"> minute(s)</span>` : ''}
   </div>` : ''}`).join('')}
-  <button data-act="addfbtn" data-j="${j}">${(f.buttons || []).length ? '+ Add another button' : '+ Add its own button (otherwise the step\'s buttons are used)'}</button>`;
+  <button class="ghost small" data-act="addfbtn" data-j="${j}">${(f.buttons || []).length ? '+ Add another button' : '+ Add its own button (otherwise the step\'s buttons are used)'}</button>`;
 }
 
 function followupRows(list, randomOn) {
@@ -198,18 +327,17 @@ function followupRows(list, randomOn) {
   const random = typed > 1
     ? `<label class="chk" style="margin:8px 0"><input type="checkbox" data-f="fu-random" ${randomOn ? 'checked' : ''}> 🎲 Pick ONE of these at random each time (instead of sending all of them). The time settings of the first one are used.</label>`
     : '';
-  return random + rows + '<button data-act="addfu">+ Add follow-up</button>';
+  return random + rows + '<button class="ghost small" data-act="addfu">+ Add follow-up</button>';
 }
 
-const FU_HELP = `<div class="hint">Here you only set <b>when</b>. The message itself is a random post from the customer's channel.<br>
-  <b>Send after</b>: fill only the first box for a fixed wait, or fill "to" as well for a random wait between the two (e.g. 1 to 3 hours).<br>
+const FU_HELP = `<details class="how"><summary>How the time settings work</summary><div class="hint"><b>Send after</b>: fill only the first box for a fixed wait, or fill "to" as well for a random wait between the two (for example 1 to 3 hours).<br>
   <b>Repeat</b>: sends again after the same kind of wait. Tick "keep repeating" to go on until they continue (at least 5 minutes between messages).<br>
-  <b>More than one follow-up</b>: each one has its own timing (for example one after 1 hour, another after 1 day).</div>`;
+  <b>More than one follow-up</b>: each one has its own timing, for example one after 1 hour and another after 1 day.</div></details>`;
 
 // One place for reminders that apply to EVERY step (unless a step says otherwise)
 function generalHtml() {
   return `<label>⏰ Reminders for all steps</label>
-    <div class="hint">Set them once here. If someone gets any step and doesn't tap a button, they get these. As soon as they move to another step, the old step's reminders are deleted and the new step's start. You can change one step in its own card ("Reminders for this step").</div>
+    <div class="hint">If someone gets a step and doesn't tap a button, they get a reminder. The message is a random post from the customer's channel, so here you only set <b>when</b>. A step can use its own reminders or none (see "Reminders for this step").</div>
     ${FU_HELP}
     ${followupRows(data.followups, data.followupsRandom)}`;
 }
@@ -244,13 +372,18 @@ function render() {
   const wrap = $('#steps');
   wrap.innerHTML = '';
   const gcard = document.createElement('div');
-  gcard.className = 'card';
+  gcard.className = 'card reminders';
   gcard.dataset.id = '__general__';
-  gcard.innerHTML = generalHtml();
+  if (collapsed.has('__general__')) gcard.classList.add('collapsed');
+  gcard.innerHTML = `<button class="stephead" data-act="toggle" aria-label="Show or hide the reminders">
+      <span class="stepid">⏰ Reminders for all steps</span><span class="chev">›</span>
+    </button>
+    <div class="tags">${(data.followups || []).length ? (data.followups || []).map((f) => `<span class="pill">${esc(fuSummary(f))}</span>`).join('') : '<span class="pill">none set yet</span>'}</div>
+    <div class="edit">${generalHtml()}</div>`;
   wrap.appendChild(gcard);
   Object.entries(data.steps).forEach(([id, step]) => {
     const card = document.createElement('div');
-    card.className = 'card' + (id === data.start ? ' start' : '');
+    card.className = 'card' + (id === data.start ? ' start' : '') + (collapsed.has(id) ? ' collapsed' : '');
     const btns = (step.buttons || [])
       .map((b, i) => {
         const isLink = !!b.url;
@@ -273,24 +406,65 @@ function render() {
           : '');
       })
       .join('');
+    const nBtn = (step.buttons || []).length;
+    const fuMode = step.followups && step.followups.length ? 'own reminders' : step.noFollowups ? 'no reminders' : (data.followups || []).length ? 'general reminders' : '';
     card.innerHTML = `
-      <div class="row">
-        <div class="stepid" style="flex:1">${esc(id)}${id === data.start ? '<span class="badge">START</span>' : ''}</div>
-        ${id !== data.start ? '<button data-act="setstart">Make start</button>' : ''}
-        ${Object.keys(data.steps).length > 1 ? '<button class="danger" data-act="delstep">Delete</button>' : ''}
-      </div>
-      <label>Message text</label>
-      <textarea data-f="text">${esc(step.text)}</textarea>
-      <div class="hint">Use {name} for the person's first name. Bold: &lt;b&gt;text&lt;/b&gt; · Italic: &lt;i&gt;text&lt;/i&gt;</div>
-      <label>Image link (optional, sent before the message)</label>
-      <input data-f="image" placeholder="https://..." value="${esc(step.image || '')}">
-      <label>Buttons</label>
-      ${btns}
-      <button data-act="addbtn">+ Add button</button>
-      ${followupsHtml(step)}`;
+      <button class="stephead" data-act="toggle" aria-label="Show or hide this step">
+        <span class="stepid">${esc(id)}${id === data.start ? '<span class="badge">START</span>' : ''}${id === data.joinStep ? '<span class="badge">JOIN WELCOME</span>' : ''}</span>
+        <span class="chev" data-act="toggle">›</span>
+      </button>
+      <div class="preview" data-preview>${previewHtml(step)}</div>
+      ${fuMode ? `<div class="tags"><span class="pill">${fuMode}</span></div>` : ''}
+      <div class="edit">
+        <label>Message text</label>
+        <textarea data-f="text">${esc(step.text)}</textarea>
+        <div class="hint">Use {name} for the person's first name. Bold: &lt;b&gt;text&lt;/b&gt; · Italic: &lt;i&gt;text&lt;/i&gt;</div>
+        <label>Picture link (optional)</label>
+        <input data-f="image" placeholder="https://..." value="${esc(step.image || '')}">
+        <label>Video link (optional, a direct .mp4 link; replaces the picture)</label>
+        <input data-f="video" placeholder="https://... .mp4" value="${esc(step.video || '')}">
+        <label>Buttons</label>
+        ${btns}
+        <button class="ghost small" data-act="addbtn">+ Add button</button>
+        ${followupsHtml(step)}
+        <div class="actions">
+          ${id !== data.start ? '<button class="small" data-act="setstart">Make this the start step</button>' : ''}
+          ${Object.keys(data.steps).length > 1 ? '<button class="danger small" data-act="delstep">Delete step</button>' : ''}
+        </div>
+      </div>`;
     card.dataset.id = id;
     wrap.appendChild(card);
   });
+  autosize();
+  const all = Object.keys(data.steps).every((k) => collapsed.has(k));
+  $('#foldBtn').textContent = all ? 'Expand all' : 'Collapse all';
+}
+
+// What the person will see: the message as a chat bubble, with the buttons under it
+function fuSummary(f) {
+  const t = f.afterMax && Number(f.afterMax) > Number(f.after) ? `${f.after}–${f.afterMax}` : `${f.after}`;
+  const rep = f.forever ? ', until they continue' : Number(f.repeat) ? `, then ${f.repeat} more` : '';
+  return `after ${t} ${f.unit}${rep}${f.channel ? ' · from channel' : ''}`;
+}
+
+function previewHtml(step) {
+  const raw = String(step.text || '');
+  let t = esc(raw).replace(/&lt;(\/?)(b|i|u|s|code)&gt;/g, '<$1$2>').replace(/\{(?:first_name|name)\}/g, 'Ola').replace(/\{full_name\}/g, 'Ola Adeyemi').replace(/\n/g, '<br>');
+  const media = step.video ? '<div class="media">🎬 Video</div>' : step.image ? '<div class="media">🖼 Picture</div>' : '';
+  const keys = (step.buttons || []).map((b) => {
+    let to = '';
+    if (b.url) {
+      let host = b.url;
+      try { host = new URL(b.url).hostname; } catch (e) {}
+      to = '↗ ' + esc(host) + (b.then ? ' · then ' + esc(b.then) : '');
+    } else to = '→ ' + esc(b.goto || '');
+    return `<div class="key">${esc(b.label)}<small>${to}</small></div>`;
+  }).join('');
+  return `<div class="bubble ${raw.trim() ? '' : 'empty'}">${media}${raw.trim() ? t : 'No message yet'}</div>${keys ? `<div class="keys">${keys}</div>` : ''}`;
+}
+
+function autosize() {
+  document.querySelectorAll('#steps textarea').forEach((ta) => { ta.style.height = 'auto'; ta.style.height = Math.max(ta.scrollHeight + 2, 80) + 'px'; });
 }
 
 $('#steps').addEventListener('input', (e) => {
@@ -300,6 +474,7 @@ $('#steps').addEventListener('input', (e) => {
   const f = e.target.dataset.f;
   const i = e.target.dataset.i;
   if (f === 'text' || f === 'image') step[f] = e.target.value;
+  else if (f === 'video') { if (e.target.value.trim()) step.video = e.target.value; else delete step.video; }
   else if (f && f.startsWith('fu-')) {
     if (f === 'fu-random') { step.followupsRandom = e.target.checked; return; }
     const fu = (step.followups || [])[+e.target.dataset.j];
@@ -337,6 +512,14 @@ $('#steps').addEventListener('input', (e) => {
       else delete b.then;
     }
   }
+});
+
+$('#steps').addEventListener('input', (e) => {
+  const card = e.target.closest('.card');
+  if (!card || card.dataset.id === '__general__') return;
+  const pv = card.querySelector('[data-preview]');
+  if (pv && data.steps[card.dataset.id]) pv.innerHTML = previewHtml(data.steps[card.dataset.id]);
+  if (e.target.tagName === 'TEXTAREA') autosize();
 });
 
 $('#steps').addEventListener('change', (e) => {
@@ -392,14 +575,18 @@ $('#steps').addEventListener('change', (e) => {
   render();
 });
 
-$('#steps').addEventListener('click', (e) => {
+$('#steps').addEventListener('click', (ev) => {
+  const e = { target: ev.target.closest('[data-act]') };
+  if (!e.target) return;
   const act = e.target.dataset.act;
   if (!act) return;
-  dirty = true;
+  if (act !== 'toggle') markDirty();
   const card = e.target.closest('.card');
   const id = card.dataset.id;
   const step = owner(id);
-  if (act === 'addfu') {
+  if (act === 'toggle') {
+    if (collapsed.has(id)) collapsed.delete(id); else collapsed.add(id);
+  } else if (act === 'addfu') {
     step.followups = step.followups || [];
     step.followups.push({ after: 1, unit: 'hours', repeat: 0, channel: true, text: '' });
   } else if (act === 'delfu') {
@@ -433,6 +620,7 @@ $('#steps').addEventListener('click', (e) => {
     if (id === data.start) msg += `\n\nThis is the START step, so another step will become the start. You can change it with "Make start".`;
     if (!confirm(msg)) return;
     delete data.steps[id];
+    if (data.joinStep === id) delete data.joinStep;
     // Link buttons that "then send" this step keep opening their link, they just stop sending the extra step
     Object.values(data.steps).forEach((s) => (s.buttons || []).forEach((b) => { if (b.then === id) delete b.then; }));
     Object.values(data.steps).forEach((s) => { s.buttons = (s.buttons || []).filter((b) => b.goto !== id); });
@@ -444,6 +632,14 @@ $('#steps').addEventListener('click', (e) => {
   render();
 });
 
+$('#foldBtn').addEventListener('click', () => {
+  const ids = Object.keys(data.steps);
+  const allFolded = ids.every((id) => collapsed.has(id));
+  if (allFolded) collapsed.clear(); else ids.forEach((id) => collapsed.add(id));
+  $('#foldBtn').textContent = allFolded ? 'Collapse all' : 'Expand all';
+  render();
+});
+
 $('#addStep').addEventListener('click', () => {
   const raw = prompt('Step ID (lowercase letters, numbers, - or _). Example: buy_btc');
   if (!raw) return;
@@ -451,7 +647,8 @@ $('#addStep').addEventListener('click', () => {
   if (!/^[a-z0-9_-]{1,40}$/.test(id)) return toast('Use only lowercase letters, numbers, - and _.', true);
   if (data.steps[id]) return toast('That ID already exists.', true);
   data.steps[id] = { text: 'New message', image: '', buttons: [{ label: '🏠 Main menu', goto: data.start }] };
-  dirty = true;
+  collapsed.delete(id);
+  markDirty();
   render();
   document.querySelector(`[data-id="${id}"]`).scrollIntoView({ behavior: 'smooth' });
 });
@@ -459,20 +656,21 @@ $('#addStep').addEventListener('click', () => {
 $('#save').addEventListener('click', async () => {
   const res = await fetch('api/steps', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
   const out = await res.json();
-  if (res.ok) { dirty = false; toast('Saved. Live now ✓'); }
+  if (res.ok) { markClean(); toast('Saved. Live now ✓'); }
   else toast(out.error || 'Save failed', true);
 });
 
-['input', 'change'].forEach((ev) => $('#steps').addEventListener(ev, () => { dirty = true; }));
+['input', 'change'].forEach((ev) => $('#steps').addEventListener(ev, () => { markDirty(); }));
 
 // Who is this? Shows the customer's name, and lets YOU (master) swipe between customers.
 async function loadMe() {
   try { me = await (await fetch('api/me')).json(); } catch (e) { return; }
   if (!me || !me.name) return;
-  $('#who').textContent = '🤖 ' + me.name + (me.active ? '' : ' (paused)');
+  $('#who').textContent = me.name + (me.active ? '' : ' (paused)');
+  $('#avatar').textContent = (me.name.trim()[0] || '🤖').toUpperCase();
   document.title = me.name + ' · Bot Admin';
   if (me.role === 'master') {
-    $('#back').style.display = 'inline';
+    $('#back').style.display = 'inline-flex';
     setupSwipe();
   }
 }
